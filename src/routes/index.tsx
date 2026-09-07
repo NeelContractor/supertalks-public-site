@@ -102,16 +102,21 @@ function Index() {
           <a href="#top" aria-label="Home">
             <img src={headerLogo} alt="Lee Mor" width={179} height={39} />
           </a>
-          <button
-            type="button"
-            className="wx-menu-btn"
-            onClick={() => setMenuOpen(true)}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            aria-label="Open navigation"
-          >
-            <MenuIcon />
-          </button>
+          <div className="wx-header-actions">
+            <a className="wx-header-dash" href="/dashboard">
+              My Dashboard
+            </a>
+            <button
+              type="button"
+              className="wx-menu-btn"
+              onClick={() => setMenuOpen(true)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="Open navigation"
+            >
+              <MenuIcon />
+            </button>
+          </div>
         </header>
 
         <div className="wx-hero-copy">
@@ -121,9 +126,14 @@ function Index() {
             Inner Peace
           </h2>
           <p className="wx-hero-sub">Embrace Healing Today</p>
-          <a className="wx-btn wx-btn-primary" href="#words">
-            Get Started
-          </a>
+          <div className="wx-hero-buttons">
+            <a className="wx-btn wx-btn-primary" href="#words">
+              Get Started
+            </a>
+            <a className="wx-btn wx-btn-outline" href="/dashboard">
+              My Dashboard
+            </a>
+          </div>
         </div>
 
         <div className="wx-hero-media">

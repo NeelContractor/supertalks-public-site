@@ -13,10 +13,16 @@ export interface SiteDocument {
 
 export interface SitePayload {
   slug: string;
+  astrologerId?: string;
   astrologerName: string;
   templateId: string;
   templateName: string;
   templatePreviewImageUrl: string | null;
   schema: unknown;
   site: SiteDocument;
+  questionPricePaise?: number;
+  callPricePerSlotPaise?: number;
+  slotDurationMinutes?: number;
+  isAcceptingQuestions?: boolean;
+  isAcceptingBookings?: boolean;
 }

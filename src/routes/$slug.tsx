@@ -52,6 +52,15 @@ function SitePage() {
         setSite(msg.site);
       } else if (msg.type === "supertalks:select") {
         setSelectedSectionId(msg.sectionId ?? null);
+        if (msg.sectionId) {
+          // Bring the section into view when it is selected in the editor's
+          // customize list (hero section renders as data-st-section-id="hero").
+          window.requestAnimationFrame(() => {
+            document
+              .querySelector(`[data-st-section-id="${msg.sectionId}"]`)
+              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          });
+        }
       }
     };
 
@@ -73,6 +82,7 @@ function SitePage() {
       edit={edit}
       selectedSectionId={selectedSectionId}
       onSelect={handleSelect}
+      client={data}
     />
   );
 }
