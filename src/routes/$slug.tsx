@@ -6,8 +6,8 @@ import type { SitePayload } from "../types";
 // Client-bundled code: never touch `process` directly (not defined in the browser).
 const env =
   typeof process !== "undefined" && typeof process.env === "object" ? process.env : {};
-const API_BASE = env.BACKEND_URL ?? "http://localhost:3000";
-const EDITOR_ORIGIN = env.EDITOR_ORIGIN ?? "http://localhost:3001";
+const API_BASE = env.BUN_PUBLIC_BACKEND_URL ?? "http://localhost:3000";
+const EDITOR_ORIGIN = env.BUN_PUBLIC_EDITOR_ORIGIN ?? "http://localhost:3001";
 
 export const Route = createFileRoute("/$slug")({
   loader: async ({ params }) => {

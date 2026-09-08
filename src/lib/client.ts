@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 // Client-bundled code: never touch `process` directly (not defined in the browser).
 const env =
   typeof process !== "undefined" && typeof process.env === "object" ? process.env : {};
-export const API_BASE = env.BACKEND_URL ?? "http://localhost:3000";
+export const API_BASE = env.BUN_PUBLIC_BACKEND_URL ?? "http://localhost:3000";
 
 const ACCESS_KEY = "supertalks_access_token";
 const REFRESH_KEY = "supertalks_refresh_token";
