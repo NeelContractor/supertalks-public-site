@@ -1,9 +1,19 @@
+export interface FieldStyle {
+  fontSize?: string;
+  color?: string;
+  fontFamily?: string;
+  fontWeight?: string;
+  fontStyle?: string;
+  textTransform?: string;
+}
+
 export interface SiteSectionDoc {
   id: string;
   type: string;
   name: string;
   default: boolean;
   props: Record<string, unknown>;
+  fieldStyles?: Record<string, FieldStyle>;
 }
 
 export interface SiteDocument {

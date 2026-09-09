@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import type { SiteDocument, SiteSectionDoc } from "../types";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { FieldStyle, SiteDocument, SiteSectionDoc } from "../types";
 import {
   askQuestion,
   completePayment,
@@ -36,17 +36,52 @@ function num(value: unknown, fallback: number): number | string {
   return typeof value === "number" ? value : fallback;
 }
 
+// A real Google Font family name (as opposed to the built-in serif/sans categories).
+function fontStack(value: string, stacks: Record<string, string>, fallbackKey: string): string {
+  if (value in stacks) return stacks[value] as string;
+  if (value && value !== "serif" && value !== "sans") {
+    return `"${value}", system-ui, sans-serif`;
+  }
+  return stacks[fallbackKey] as string;
+}
+
+const loadFonts: Record<string, Promise<void>> = {};
+
+function ensureFont(family: string): void {
+  if (!family || family === "serif" || family === "sans" || loadFonts[family]) return;
+  if (typeof document === "undefined") return;
+  loadFonts[family] = (async () => {
+    const id = `gf-${family.replace(/[^a-zA-Z0-9]/g, "-")}`;
+    if (document.getElementById(id)) return;
+    const url = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(
+      family,
+    )}:wght@400;500;600;700&display=swap`;
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = url;
+    document.head.appendChild(link);
+    try {
+      await document.fonts.load(`16px "${family}"`);
+    } catch {
+      /* font may not be available yet */
+    }
+  })();
+}
+
 export function designVars(design: Record<string, unknown>): React.CSSProperties {
   const dv = design ?? {};
   const displayFont = str(dv["displayFont"], "serif");
   const bodyFont = str(dv["bodyFont"], "sans");
+  ensureFont(displayFont);
+  ensureFont(bodyFont);
   return {
     "--site-maroon": str(dv["primaryColor"], "#771609"),
     "--site-pink": str(dv["panelColor"], "#fff4f3"),
     "--site-white": str(dv["backgroundColor"], "#fffcfc"),
     "--site-dark": str(dv["darkColor"], "#253039"),
-    "--site-display": DISPLAY_STACKS[displayFont] ?? DISPLAY_STACKS["serif"],
-    "--site-body": BODY_STACKS[bodyFont] ?? BODY_STACKS["sans"],
+    "--site-display": fontStack(displayFont, DISPLAY_STACKS, "serif"),
+    "--site-body": fontStack(bodyFont, BODY_STACKS, "sans"),
     "--site-scale": num(dv["scale"], 1) as number,
   } as React.CSSProperties;
 }
@@ -66,6 +101,396 @@ function itemsOf(props: Record<string, unknown>, key: string): Array<Record<stri
     Record<string, unknown>
   >;
   return [];
+}
+
+// ---- Click-to-edit ---------------------------------------------------------
+
+function fieldStyleOf(section: SiteSectionDoc, path: string): FieldStyle {
+  return section.fieldStyles?.[path] ?? {};
+}
+
+const TOOLBAR_FONTS = [
+  "serif",
+  "sans",
+  "Inter",
+  "Roboto",
+  "Open Sans",
+  "Lato",
+  "Montserrat",
+  "Poppins",
+  "Source Sans 3",
+  "Nunito",
+  "Playfair Display",
+  "Merriweather",
+  "Lora",
+  "PT Serif",
+  "Cormorant Garamond",
+  "Oswald",
+  "Bebas Neue",
+  "Space Grotesk",
+  "Outfit",
+  "Josefin Sans",
+  "DM Sans",
+  "Cabin",
+];
+
+const SIZE_PRESETS = [
+  "12px",
+  "13px",
+  "14px",
+  "15px",
+  "16px",
+  "18px",
+  "20px",
+  "22px",
+  "24px",
+  "28px",
+  "32px",
+  "36px",
+  "40px",
+  "44px",
+  "48px",
+  "56px",
+  "64px",
+  "72px",
+];
+
+function styleSheetFor(style: FieldStyle): React.CSSProperties {
+  const out: Record<string, string> = {};
+  if (style.fontSize) out["fontSize"] = style.fontSize;
+  if (style.color) out["color"] = style.color;
+  if (style.fontWeight) out["fontWeight"] = style.fontWeight;
+  if (style.fontStyle) out["fontStyle"] = style.fontStyle;
+  if (style.textTransform) out["textTransform"] = style.textTransform;
+  if (style.fontFamily) {
+    const family = style.fontFamily;
+    ensureFont(family);
+    out["fontFamily"] =
+      family === "serif" || family === "sans"
+        ? fontStack(family, DISPLAY_STACKS, "sans")
+        : `"${family}", system-ui, sans-serif`;
+  }
+  return out as React.CSSProperties;
+}
+
+interface EditableProps {
+  as?: string;
+  field: string;
+  section: SiteSectionDoc;
+  edit: boolean;
+  value: string;
+  className?: string;
+  style?: React.CSSProperties;
+  onSelectField?: (field: string) => void;
+  onEditValue?: (field: string, value: string) => void;
+  href?: string;
+  title?: string;
+}
+
+function Editable({
+  as = "span",
+  field,
+  section,
+  edit,
+  value,
+  className,
+  style,
+  onSelectField,
+  onEditValue,
+  href,
+  title,
+  ...rest
+}: EditableProps & Record<string, unknown>) {
+  const elRef = useRef<HTMLElement | null>(null);
+  const mergedStyle: React.CSSProperties = {
+    ...styleSheetFor(fieldStyleOf(section, field)),
+    ...style,
+  };
+
+  // Keep the DOM text in sync with the stored value, but never clobber the
+  // caret while the user is actively typing inside the element.
+  useLayoutEffect(() => {
+    const el = elRef.current;
+    if (!el) return;
+    if (document.activeElement === el) return;
+    if (el.textContent !== value) el.textContent = value;
+  }, [value, field, edit]);
+
+  if (edit) {
+    return React.createElement(
+      as,
+      {
+        ...rest,
+        ref: elRef,
+        className,
+        href,
+        title,
+        style: { ...mergedStyle, cursor: "text", minWidth: 8 },
+        "data-st-field": `${section.id}|${field}`,
+        contentEditable: true,
+        suppressContentEditableWarning: true,
+        spellCheck: false,
+        onClick: (e: React.MouseEvent) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onSelectField?.(field);
+        },
+        onInput: (e: React.FormEvent) => {
+          const text = (e.currentTarget as HTMLElement).textContent ?? "";
+          onEditValue?.(field, text);
+        },
+        onBlur: () => {
+          onEditValue?.(field, elRef.current?.textContent ?? "");
+        },
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            (e.currentTarget as HTMLElement).blur();
+          }
+        },
+      },
+      null,
+    );
+  }
+  return React.createElement(
+    as,
+    { ...rest, className, href, title, style: mergedStyle },
+    value,
+  );
+}
+
+function StyleToolbar({
+  rect,
+  style,
+  fieldLabel,
+  onChange,
+  onClose,
+}: {
+  rect: { top: number; left: number; width: number; bottom: number };
+  style: FieldStyle;
+  fieldLabel: string;
+  onChange: (patch: { value?: string; style?: FieldStyle | null }) => void;
+  onClose: () => void;
+}) {
+  const [toolbarH, setToolbarH] = useState(196);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (toolbarRef.current) setToolbarH(toolbarRef.current.offsetHeight);
+  }, []);
+  const gap = 10;
+  const gridGap = 8;
+  const above = rect.top - toolbarH >= gridGap;
+  const toolbar: React.CSSProperties = {
+    position: "fixed",
+    zIndex: 9999,
+    left: Math.max(8, Math.min(rect.left, window.innerWidth - 262 - 8)),
+    top: above ? rect.top - toolbarH - gap : rect.bottom + gap,
+    width: 250,
+    background: "#1d2733",
+    color: "#fff",
+    borderRadius: 10,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+    padding: 10,
+    fontSize: 12,
+    fontFamily: "system-ui, sans-serif",
+  };
+
+  const row: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  };
+  const label: React.CSSProperties = {
+    width: 44,
+    color: "#9fb0c0",
+    flexShrink: 0,
+  };
+  const inputBase: React.CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    background: "#0f1720",
+    border: "1px solid #334155",
+    color: "#fff",
+    borderRadius: 6,
+    padding: "4px 6px",
+    fontSize: 12,
+    outline: "none",
+  };
+  const colorVal = /^#[0-9a-fA-F]{6}$/.test(style.color ?? "") ? (style.color as string) : "#000000";
+
+  return (
+    <div ref={toolbarRef} style={toolbar}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 8,
+        }}
+      >
+        <span style={{ fontWeight: 600 }}>{fieldLabel}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#9fb0c0",
+            fontSize: 16,
+            cursor: "pointer",
+            lineHeight: 1,
+          }}
+          aria-label="Close element toolbar"
+        >
+          ×
+        </button>
+      </div>
+      <p
+        style={{
+          margin: 0,
+          marginBottom: 8,
+          fontSize: 10.5,
+          color: "#9fb0c0",
+          lineHeight: 1.4,
+        }}
+      >
+        Editing "{fieldLabel}" — click the text on the page to type.
+      </p>
+      <div style={row}>
+        <span style={label}>Size</span>
+        <select
+          value={style.fontSize ?? ""}
+          style={{ ...inputBase, flex: "0 0 auto", width: 78 }}
+          onChange={(e) => onChange({ style: { ...style, fontSize: e.target.value } })}
+        >
+          <option value="">Default</option>
+          {SIZE_PRESETS.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={style.fontSize ?? ""}
+          style={{ ...inputBase, width: 56, flex: "0 0 auto" }}
+          onChange={(e) => onChange({ style: { ...style, fontSize: e.target.value } })}
+          placeholder="e.g. 24px"
+          title="Custom font size"
+        />
+        <button
+          type="button"
+          onClick={() => onChange({ style: null })}
+          style={{
+            background: "#334155",
+            border: "none",
+            color: "#fff",
+            borderRadius: 6,
+            padding: "4px 8px",
+            fontSize: 11,
+            cursor: "pointer",
+            marginLeft: "auto",
+          }}
+          title="Reset element styles to defaults"
+        >
+          Reset
+        </button>
+      </div>
+      <div style={row}>
+        <span style={label}>Font</span>
+        <select
+          value={style.fontFamily ?? ""}
+          style={inputBase}
+          onChange={(e) => onChange({ style: { ...style, fontFamily: e.target.value } })}
+        >
+          <option value="">Default</option>
+          {TOOLBAR_FONTS.map((font) => (
+            <option key={font} value={font}>
+              {font}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div style={row}>
+        <span style={label}>Color</span>
+        <input
+          type="color"
+          value={colorVal}
+          style={{ width: 30, height: 26, padding: 0, border: "none", background: "transparent", cursor: "pointer", flexShrink: 0 }}
+          onChange={(e) => onChange({ style: { ...style, color: e.target.value } })}
+        />
+        <input
+          type="text"
+          value={style.color ?? ""}
+          style={inputBase}
+          onChange={(e) => onChange({ style: { ...style, color: e.target.value } })}
+          placeholder="e.g. #771609"
+        />
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          onClick={() =>
+            onChange({
+              style: {
+                ...style,
+                fontWeight: style.fontWeight === "bold" ? "" : "bold",
+              },
+            })
+          }
+          style={{
+            width: 32,
+            height: 28,
+            borderRadius: 6,
+            border: "1px solid #334155",
+            background: style.fontWeight === "bold" ? "#ffb3ab" : "#0f1720",
+            color: style.fontWeight === "bold" ? "#1d2733" : "#fff",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+          title="Bold"
+        >
+          B
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onChange({
+              style: {
+                ...style,
+                fontStyle: style.fontStyle === "italic" ? "" : "italic",
+              },
+            })
+          }
+          style={{
+            width: 32,
+            height: 28,
+            borderRadius: 6,
+            border: "1px solid #334155",
+            background: style.fontStyle === "italic" ? "#ffb3ab" : "#0f1720",
+            color: style.fontStyle === "italic" ? "#1d2733" : "#fff",
+            fontStyle: "italic",
+            cursor: "pointer",
+          }}
+          title="Italic"
+        >
+          I
+        </button>
+        <select
+          value={style.textTransform ?? ""}
+          onChange={(e) => onChange({ style: { ...style, textTransform: e.target.value } })}
+          style={{ ...inputBase, height: 28 }}
+        >
+          <option value="">Case: default</option>
+          <option value="none">none</option>
+          <option value="uppercase">UPPERCASE</option>
+          <option value="lowercase">lowercase</option>
+          <option value="capitalize">Title Case</option>
+        </select>
+      </div>
+    </div>
+  );
 }
 
 function MenuIcon() {
@@ -189,12 +614,16 @@ function HeroSection({
   edit,
   selected,
   onSelect,
+  onSelectField,
+  onEditValue,
 }: {
   section: SiteSectionDoc;
   navLinks: { label: string; href: string }[];
   edit: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditValue?: (sectionId: string, field: string, value: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const props = propsOf(section);
@@ -207,7 +636,12 @@ function HeroSection({
       <div className="wx-hero">
         <header className="wx-header">
           <a href="#top" aria-label="Home">
-            {logo ? <img src={logo} alt={logoAlt} /> : <span className="wx-site-name">{siteName}</span>}
+            {logo ? (
+              <img src={logo} alt={logoAlt} />
+            ) : (
+              <Editable as="span" className="wx-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+            )}
           </a>
           <button
             type="button"
@@ -225,11 +659,12 @@ function HeroSection({
         </header>
 
         <div className="wx-hero-copy">
-          <h2 style={{ whiteSpace: "pre-line" }}>{p(props, "heading", "Welcome")}</h2>
-          <p className="wx-hero-sub">{p(props, "subtitle")}</p>
-          <a className="wx-btn wx-btn-primary" href={p(props, "ctaLink", "#about")}>
-            {p(props, "ctaLabel", "Get Started")}
-          </a>
+          <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "Welcome")} style={{ whiteSpace: "pre-line" }} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+          <Editable as="p" className="wx-hero-sub" field="subtitle" section={section} edit={edit} value={p(props, "subtitle")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+          <Editable as="a" className="wx-btn wx-btn-primary" field="ctaLabel" section={section} edit={edit} value={p(props, "ctaLabel", "Get Started")} href={p(props, "ctaLink", "#about")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         </div>
 
         <div className="wx-hero-media">
@@ -270,19 +705,25 @@ function QuoteSection({
   edit,
   selected,
   onSelect,
+  onSelectField,
+  onEditValue,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditValue?: (sectionId: string, field: string, value: string) => void;
 }) {
   const props = propsOf(section);
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-words">
-        <h3 className="wx-eyebrow">{p(props, "eyebrow")}</h3>
+        <Editable as="h3" className="wx-eyebrow" field="eyebrow" section={section} edit={edit} value={p(props, "eyebrow")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         <blockquote>
-          <p>{p(props, "quote")}</p>
+          <Editable as="p" field="quote" section={section} edit={edit} value={p(props, "quote")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         </blockquote>
       </div>
     </SectionShell>
@@ -294,21 +735,26 @@ function AboutSection({
   edit,
   selected,
   onSelect,
+  onSelectField,
+  onEditValue,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditValue?: (sectionId: string, field: string, value: string) => void;
 }) {
   const props = propsOf(section);
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-about">
-        <h2>{p(props, "heading", "About")}</h2>
-        <p className="wx-body">{p(props, "body")}</p>
-        <a className="wx-btn wx-btn-outline" href={p(props, "buttonLink", "#about")}>
-          {p(props, "buttonLabel", "Learn More")}
-        </a>
+        <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "About")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+        <Editable as="p" className="wx-body" field="body" section={section} edit={edit} value={p(props, "body")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+        <Editable as="a" className="wx-btn wx-btn-outline" field="buttonLabel" section={section} edit={edit} value={p(props, "buttonLabel", "Learn More")} href={p(props, "buttonLink", "#about")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
       </div>
     </SectionShell>
   );
@@ -340,11 +786,15 @@ function ServicesSection({
   edit,
   selected,
   onSelect,
+  onSelectField,
+  onEditValue,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditValue?: (sectionId: string, field: string, value: string) => void;
 }) {
   const props = propsOf(section);
   const items = itemsOf(props, "items");
@@ -353,14 +803,17 @@ function ServicesSection({
       <div className="wx-services">
         <div className="wx-services-grid">
           <div>
-            <h2>{p(props, "heading", "Services")}</h2>
+            <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "Services")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
           </div>
           {items.map((item, i) => (
             <React.Fragment key={i}>
               <article>
                 <span className="wx-rule" />
-                <h3>{p(item, "title")}</h3>
-                <p>{p(item, "body")}</p>
+                <Editable as="h3" field={`items.${i}.title`} section={section} edit={edit} value={p(item, "title")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+                <Editable as="p" field={`items.${i}.body`} section={section} edit={edit} value={p(item, "body")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
               </article>
               <div aria-hidden="true" />
             </React.Fragment>
@@ -376,18 +829,23 @@ function ApproachSection({
   edit,
   selected,
   onSelect,
+  onSelectField,
+  onEditValue,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditValue?: (sectionId: string, field: string, value: string) => void;
 }) {
   const props = propsOf(section);
   const items = itemsOf(props, "items");
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-approach">
-        <h2>{p(props, "heading", "My Approach")}</h2>
+        <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "My Approach")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         <div className="wx-approach-list">
           {items.map((item, i) => (
             <div className="wx-approach-row" key={i}>
@@ -396,8 +854,10 @@ function ApproachSection({
               ) : (
                 <span className="wx-approach-mark">{i + 1}</span>
               )}
-              <h3>{p(item, "title")}</h3>
-              <p>{p(item, "body")}</p>
+              <Editable as="h3" field={`items.${i}.title`} section={section} edit={edit} value={p(item, "title")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+              <Editable as="p" field={`items.${i}.body`} section={section} edit={edit} value={p(item, "body")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
             </div>
           ))}
         </div>
@@ -411,25 +871,32 @@ function FeedbackSection({
   edit,
   selected,
   onSelect,
+  onSelectField,
+  onEditValue,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditValue?: (sectionId: string, field: string, value: string) => void;
 }) {
   const props = propsOf(section);
   const items = itemsOf(props, "items");
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-feedback">
-        <h2>{p(props, "heading", "Client Feedback")}</h2>
+        <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "Client Feedback")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         <div className="wx-feedback-grid">
           {items.map((item, i) => (
             <div className="wx-feedback-card" key={i}>
               <blockquote>
-                <p>{p(item, "quote")}</p>
+                <Editable as="p" field={`items.${i}.quote`} section={section} edit={edit} value={p(item, "quote")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
               </blockquote>
-              <cite>{p(item, "author")}</cite>
+              <Editable as="cite" field={`items.${i}.author`} section={section} edit={edit} value={p(item, "author")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
             </div>
           ))}
         </div>
@@ -443,23 +910,30 @@ function FaqSection({
   edit,
   selected,
   onSelect,
+  onSelectField,
+  onEditValue,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditValue?: (sectionId: string, field: string, value: string) => void;
 }) {
   const props = propsOf(section);
   const items = itemsOf(props, "items");
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-faq">
-        <h2>{p(props, "heading", "Frequently Asked Questions")}</h2>
+        <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "Frequently Asked Questions")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         <div className="wx-faq-grid">
           {items.map((item, i) => (
             <div className="wx-faq-row" key={i}>
-              <h3>{p(item, "question")}</h3>
-              <p>{p(item, "answer")}</p>
+              <Editable as="h3" field={`items.${i}.question`} section={section} edit={edit} value={p(item, "question")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+              <Editable as="p" field={`items.${i}.answer`} section={section} edit={edit} value={p(item, "answer")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
             </div>
           ))}
         </div>
@@ -473,6 +947,8 @@ function BookingSection({
   edit,
   selected,
   onSelect,
+  onSelectField,
+  onEditValue,
   client,
   auth,
   onNeedAuth,
@@ -482,6 +958,8 @@ function BookingSection({
   edit: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditValue?: (sectionId: string, field: string, value: string) => void;
   client?: SiteClientInfo;
   auth: UseAuth;
   onNeedAuth: () => void;
@@ -563,8 +1041,10 @@ function BookingSection({
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-book">
         <div className="wx-book-head">
-          <h2>{p(props, "heading", "Book a Session")}</h2>
-          <p>{p(props, "subtitle")}</p>
+          <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "Book a Session")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+          <Editable as="p" field="subtitle" section={section} edit={edit} value={p(props, "subtitle")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         </div>
         {edit ? null : (
           <>
@@ -646,6 +1126,8 @@ function QuestionSection({
   edit,
   selected,
   onSelect,
+  onSelectField,
+  onEditValue,
   client,
   auth,
   onNeedAuth,
@@ -655,6 +1137,8 @@ function QuestionSection({
   edit: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditValue?: (sectionId: string, field: string, value: string) => void;
   client?: SiteClientInfo;
   auth: UseAuth;
   onNeedAuth: () => void;
@@ -814,8 +1298,10 @@ function QuestionSection({
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-question">
         <div className="wx-question-head">
-          <h2>{p(props, "heading", "Ask a Question")}</h2>
-          <p>{p(props, "subtitle")}</p>
+          <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "Ask a Question")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+          <Editable as="p" field="subtitle" section={section} edit={edit} value={p(props, "subtitle")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         </div>
         {edit ? null : !accepting ? (
           <p className="wx-book-note">Questions are currently paused.</p>
@@ -919,7 +1405,13 @@ function QuestionSection({
                         />
                       </label>
                       <button type="submit" className="wx-btn wx-btn-primary" disabled={submitting}>
-                        {submitting ? "Sending…" : `${p(props, "buttonLabel", "Ask Question")}${priceSuffix}`}
+                        {submitting
+                          ? "Sending…"
+                          : (
+                            <Editable as="span" field="buttonLabel" section={section} edit={edit} value={p(props, "buttonLabel", "Ask Question")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+                          )}
+                        {submitting ? "" : priceSuffix}
                       </button>
                     </form>
                   </>
@@ -990,11 +1482,15 @@ function FooterSection({
   edit,
   selected,
   onSelect,
+  onSelectField,
+  onEditValue,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditValue?: (sectionId: string, field: string, value: string) => void;
 }) {
   const props = propsOf(section);
   const siteName = p(props, "siteName", "My Site");
@@ -1005,25 +1501,32 @@ function FooterSection({
       <footer className="wx-footer">
         <div className="wx-footer-inner">
           <a className="wx-footer-logo" href="#top" aria-label={`${siteName} home`}>
-            {logo ? <img src={logo} alt={logoAlt} /> : <span className="wx-footer-site-name">{siteName}</span>}
+            {logo ? <img src={logo} alt={logoAlt} /> : <Editable as="span" className="wx-footer-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />}
           </a>
           <div className="wx-footer-col">
-            <a href={`tel:${p(props, "phone")}`}>{p(props, "phone")}</a>
-            <a className="is-underline" href={`mailto:${p(props, "email")}`}>
-              {p(props, "email")}
-            </a>
-            <a
+            <Editable as="a" field="phone" section={section} edit={edit} value={p(props, "phone")} href={`tel:${p(props, "phone")}`} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+            <Editable as="a" className="is-underline" field="email" section={section} edit={edit} value={p(props, "email")} href={`mailto:${p(props, "email")}`} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+            <Editable
+              as="a"
+              field="address"
+              section={section}
+              edit={edit}
+              value={p(props, "address")}
               href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p(props, "address"))}`}
               target="_blank"
               rel="noreferrer noopener"
-            >
-              {p(props, "address")}
-            </a>
+              onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)}
+            />
           </div>
           <div className="wx-footer-col">
             <a href="#privacy">Privacy Policy</a>
             <a href="#accessibility">Accessibility Statement</a>
-            <p className="wx-copyright">{p(props, "copyright", `© ${new Date().getFullYear()} by ${siteName}`)}</p>
+            <Editable as="p" className="wx-copyright" field="copyright" section={section} edit={edit} value={p(props, "copyright", `© ${new Date().getFullYear()} by ${siteName}`)} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
           </div>
         </div>
       </footer>
@@ -1036,23 +1539,85 @@ export function SiteRenderer({
   edit = false,
   selectedSectionId,
   onSelect,
+  onSelectField,
+  onEditField,
+  activeFieldKey,
   client,
 }: {
   site: SiteDocument;
   edit?: boolean;
   selectedSectionId?: string | null;
   onSelect?: (id: string) => void;
+  onSelectField?: (sectionId: string, field: string) => void;
+  onEditField?: (
+    sectionId: string,
+    field: string,
+    patch: { value?: string; style?: FieldStyle | null },
+  ) => void;
+  activeFieldKey?: string | null;
   client?: SiteClientInfo;
 }) {
   const handleSelect = onSelect ?? (() => {});
+  const handleFieldSelect = onSelectField ?? handleSelect;
+  const handleEditField = onEditField ?? (() => {});
   const auth = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
   const [authNonce, setAuthNonce] = useState(0);
+  const [localField, setLocalField] = useState<{ sectionId: string; field: string } | null>(null);
+  const [toolbarRect, setToolbarRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    bottom: number;
+  } | null>(null);
+
+  const active =
+    localField ??
+    (activeFieldKey && selectedSectionId
+      ? { sectionId: selectedSectionId, field: activeFieldKey }
+      : null);
+
+  useEffect(() => {
+    if (!active) {
+      setToolbarRect(null);
+      return;
+    }
+    const measure = () => {
+      const el = document.querySelector(
+        `[data-st-field="${String(active.sectionId)}|${String(active.field)}"]`,
+      );
+      if (!el) {
+        setToolbarRect(null);
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      const visible =
+        r.bottom > 0 && r.top < (window.innerHeight || document.documentElement.clientHeight);
+      setToolbarRect(
+        visible ? { top: r.top, left: r.left, width: r.width, bottom: r.bottom } : null,
+      );
+    };
+    measure();
+    window.addEventListener("scroll", measure, { passive: true, capture: true });
+    window.addEventListener("resize", measure);
+    document.addEventListener("scroll", measure, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener("scroll", measure, { capture: true });
+      window.removeEventListener("resize", measure);
+      document.removeEventListener("scroll", measure, { capture: true });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.sectionId, active?.field, site.sections]);
 
   const handleAuthenticated = () => {
     setAuthOpen(false);
     setAuthNonce((n) => n + 1);
   };
+
+const selectField = (sectionId: string, field: string) => {
+  setLocalField({ sectionId, field });
+  handleFieldSelect(sectionId, field);
+};
 
   const navSections = site.sections.filter((s) => s.id !== "hero" && s.id !== "footer");
   const navLinks = navSections.map((s) => ({ label: s.name, href: `#${s.id}` }));
@@ -1061,12 +1626,57 @@ export function SiteRenderer({
     section,
     edit,
     selected: selectedSectionId === section.id,
-    onSelect: handleSelect,
+    onSelect: (id: string) => {
+      setLocalField(null);
+      handleSelect(id);
+    },
+    onSelectField: (sectionId: string, field: string) => selectField(sectionId, field),
+    onEditValue: (sectionId: string, field: string, value: string) =>
+      handleEditField(sectionId, field, { value }),
     client,
     auth,
     onNeedAuth: () => setAuthOpen(true),
     authNonce,
   });
+
+  const activeSection = active
+    ? site.sections.find((sec) => sec.id === active.sectionId)
+    : null;
+  const activeStyle = active && activeSection ? fieldStyleOf(activeSection, active.field) : {};
+  // Human-friendly labels for otherwise cryptic template field keys.
+const FIELD_LABELS: Record<string, string> = {
+  siteName: "Site Name",
+  ctaLabel: "Button Text",
+  ctaLink: "Button Link",
+  logoAlt: "Logo Alt Text",
+  imageAlt: "Image Alt Text",
+  buttonLabel: "Button Text",
+  eyebrow: "Eyebrow",
+  quote: "Quote",
+  heading: "Heading",
+  subtitle: "Subtitle",
+  body: "Description",
+  question: "Question",
+  answer: "Answer",
+  title: "Title",
+  icon: "Icon",
+};
+
+function fieldLabelOf(key: string): string {
+  const mapped = FIELD_LABELS[key];
+  if (mapped) return mapped;
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (c) => c.toUpperCase())
+    .trim();
+}
+
+  const activeLabel = active ? fieldLabelOf(active.field.split(".").pop() ?? active.field) : "";
+
+  const handleFieldChange = (patch: { value?: string; style?: FieldStyle | null }) => {
+    if (!active) return;
+    handleEditField(active.sectionId, active.field, patch);
+  };
 
   return (
     <main
@@ -1101,6 +1711,19 @@ export function SiteRenderer({
             return null;
         }
       })}
+      {edit && active && activeSection && toolbarRect ? (
+        <StyleToolbar
+          rect={toolbarRect}
+          style={activeStyle}
+          fieldLabel={activeLabel}
+          onChange={handleFieldChange}
+          onClose={() => {
+            setLocalField(null);
+            setToolbarRect(null);
+            if (active) handleSelect(active.sectionId);
+          }}
+        />
+      ) : null}
       <AuthModal
         open={authOpen}
         onClose={() => setAuthOpen(false)}

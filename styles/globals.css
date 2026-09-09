@@ -1686,6 +1686,24 @@
   box-shadow: inset 0 0 0 9999px rgba(42, 109, 244, 0.04);
 }
 
+.st-edit [data-st-field] {
+  border-radius: 2px;
+  outline: 1px dashed transparent;
+  outline-offset: 2px;
+  transition: outline-color 120ms ease, background-color 120ms ease;
+}
+
+.st-edit [data-st-field]:hover {
+  outline-color: rgba(42, 109, 244, 0.55);
+  background-color: rgba(42, 109, 244, 0.05);
+}
+
+.st-edit [data-st-field]:focus {
+  outline: 2px solid #2a6df4;
+  outline-offset: 2px;
+  background-color: rgba(42, 109, 244, 0.06);
+}
+
 .st-edit .st-section[data-st-selected="true"]::before {
   content: attr(data-st-name);
   position: absolute;

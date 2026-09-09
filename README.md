@@ -19,8 +19,3 @@ bun start
 ```
 
 This project was created using `bun init` in bun v1.4.0. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
-
-## TODO
-- fix mobile view ui
-- overflowing text, ui, separator line,
-- add iframe logo

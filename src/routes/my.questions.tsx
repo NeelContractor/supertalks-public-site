@@ -16,6 +16,7 @@ import {
   type UseAuth,
 } from "../lib/client";
 import { PayConfirm } from "../lib/pay";
+import { connectQuestionSocket } from "../lib/ws";
 
 export const Route = createFileRoute("/my/questions")({
   head: () => ({
@@ -164,6 +165,7 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
   const [pendingPay, setPendingPay] = useState<{ paymentId: string; amountPaise: number } | null>(null);
   const [paying, setPaying] = useState(false);
   const replyRef = useRef<HTMLInputElement>(null);
+  const seenIds = useRef<Set<string>>(new Set());
 
   const load = () => {
     setLoading(true);
@@ -183,17 +185,29 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
 
   const active = questions.find((q) => q.id === activeId) ?? null;
 
+  const upsertMessage = (message: ChatMessage) => {
+    if (seenIds.current.has(message.id)) return;
+    seenIds.current.add(message.id);
+    setMessages((prev) => [...prev, message]);
+  };
+
+  const applyThreadStatus = (questionId: string, status: string) => {
+    setQuestions((prev) =>
+      prev.map((it) => (it.id === questionId ? { ...it, status } : it))
+    );
+  };
+
   const fetchThread = (q: ClientQuestion) => {
     setActiveId(q.id);
     setMessages([]);
+    seenIds.current = new Set();
     setReply("");
     setThreadLoading(true);
     fetchQuestionMessages(q.id)
       .then(({ question, messages }) => {
+        seenIds.current = new Set(messages.map((m) => m.id));
         setMessages(messages);
-        setQuestions((prev) =>
-          prev.map((it) => (it.id === question.id ? { ...it, status: question.status } : it))
-        );
+        applyThreadStatus(question.id, question.status);
       })
       .catch((err) => setBanner({ ok: false, message: err instanceof Error ? err.message : "Could not open chat." }))
       .finally(() => setThreadLoading(false));
@@ -201,12 +215,14 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
 
   useEffect(() => {
     if (!activeId) return;
-    const timer = setInterval(() => {
-      fetchQuestionMessages(activeId)
-        .then(({ messages }) => setMessages(messages))
-        .catch(() => {});
-    }, 4000);
-    return () => clearInterval(timer);
+    const disconnect = connectQuestionSocket(activeId, {
+      onMessage: ({ questionId, message, question }) => {
+        upsertMessage(message);
+        applyThreadStatus(questionId, question.status);
+      },
+      onQuestionUpdate: ({ questionId, status }) => applyThreadStatus(questionId, status),
+    });
+    return () => disconnect();
   }, [activeId]);
 
   const handleSend = async (event: React.FormEvent) => {
@@ -220,7 +236,7 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
         setPendingPay({ paymentId: result.payment.id, amountPaise: result.payment.amountPaise });
         return;
       }
-      setMessages((prev) => [...prev, result.message]);
+      upsertMessage(result.message);
       setReply("");
       setQuestions((prev) =>
         prev.map((it) => (it.id === result.question.id ? { ...it, status: result.question.status } : it))
@@ -238,7 +254,7 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
     try {
       const result = await completePayment(pendingPay.paymentId);
       setPendingPay(null);
-      if (result.message) setMessages((prev) => [...prev, result.message!]);
+      if (result.message) upsertMessage(result.message!);
       if (result.question) {
         setQuestions((prev) =>
           prev.map((it) => (it.id === result.question!.id ? { ...it, status: result.question!.status } : it))
