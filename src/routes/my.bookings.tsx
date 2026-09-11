@@ -4,14 +4,11 @@ import { Breadcrumbs } from "../lib/breadcrumbs";
 import {
   cancelBooking,
   formatPrice,
-  listMyBookings,
-  signin,
-  signup,
-  useAuth,
-  type AuthResponse,
   type ClientBooking,
-  type UseAuth,
 } from "../lib/client";
+import { useAuth, type UseAuth } from "../lib/useAuth";
+import { AuthPanel } from "../lib/AuthPanel";
+import { useStore } from "../lib/store";
 
 export const Route = createFileRoute("/my/bookings")({
   head: () => ({
@@ -21,6 +18,11 @@ export const Route = createFileRoute("/my/bookings")({
 });
 
 const CANCELLABLE = ["PendingPayment", "Confirmed", "Rescheduled"];
+
+const OPEN_STATUSES = new Set(["PendingPayment", "Confirmed", "Rescheduled"]);
+const CANCELLED_STATUSES = new Set(["CancelledByClient", "CancelledByAstrologer"]);
+
+type BookingFilter = "all" | "open" | "cancelled";
 
 const STATUS_LABEL: Record<string, string> = {
   PendingPayment: "Payment pending",
@@ -41,149 +43,36 @@ function MyBookings() {
   const auth = useAuth();
 
   if (!auth.user) {
-    return <AuthPanel onAuthenticated={auth.applyAuth} />;
+    return (
+      <AuthPanel
+        title="My Bookings"
+        note="Sign in (or create a free account) to view all your sessions."
+        onAuthenticated={auth.applyAuth}
+      />
+    );
   }
 
   return <BookingsHome auth={auth} />;
 }
 
-function AuthPanel({ onAuthenticated }: { onAuthenticated: (res: AuthResponse) => void }) {
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [identifier, setIdentifier] = useState("");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [username, setUsername] = useState("");
-  const [mobile, setMobile] = useState("");
-  const [password, setPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      const res =
-        mode === "signin"
-          ? await signin(identifier.trim(), password)
-          : await signup({
-              name: name.trim(),
-              email: email.trim().toLowerCase(),
-              username: username.trim().toLowerCase(),
-              mobile: mobile.trim() || undefined,
-              password,
-            });
-      setPassword("");
-      onAuthenticated(res);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <main className="wx-page my-questions-page">
-      <div className="wx-my-panel">
-        <Breadcrumbs />
-        <h1>My Bookings</h1>
-        <p className="wx-book-note">Sign in (or create a free account) to view all your sessions.</p>
-        <div className="wx-question-tabs" role="tablist">
-          <button
-            type="button"
-            className={mode === "signin" ? "is-active" : ""}
-            onClick={() => setMode("signin")}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            className={mode === "signup" ? "is-active" : ""}
-            onClick={() => setMode("signup")}
-          >
-            Sign Up
-          </button>
-        </div>
-        <form className="wx-auth-form wx-my-form" onSubmit={handleSubmit}>
-          {mode === "signup" ? (
-            <>
-              <label>
-                Your name
-                <input type="text" required minLength={2} value={name} onChange={(e) => setName(e.target.value)} />
-              </label>
-              <label>
-                Email
-                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-              </label>
-              <label>
-                Username
-                <input
-                  type="text"
-                  required
-                  minLength={3}
-                  pattern="[a-z0-9_]{3,30}"
-                  title="3-30 chars: lowercase letters, numbers, underscore"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                />
-              </label>
-              <label>
-                Mobile (optional, E.164)
-                <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} />
-              </label>
-            </>
-          ) : (
-            <label>
-              Email or username
-              <input
-                type="text"
-                required
-                minLength={3}
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="you@example.com"
-                autoFocus
-              />
-            </label>
-          )}
-          <label>
-            Password
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-          </label>
-          {mode === "signup" ? (
-            <p className="wx-auth-hint">Password needs 8+ characters, an uppercase letter, and a number.</p>
-          ) : null}
-          {error ? <p className="wx-auth-error">{error}</p> : null}
-          <button type="submit" className="wx-btn wx-btn-primary wx-auth-submit" disabled={submitting}>
-            {submitting ? "Please wait…" : mode === "signin" ? "Sign In" : "Create Account"}
-          </button>
-        </form>
-      </div>
-    </main>
-  );
-}
-
 function BookingsHome({ auth }: { auth: UseAuth }) {
-  const [bookings, setBookings] = useState<ClientBooking[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const bookings = useStore((s) => s.bookings);
+  const loading = useStore((s) => s.bookingsLoading && !s.bookingsLoaded);
+  const loadError = useStore((s) => s.bookingsError);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ ok: boolean; message: string } | null>(null);
+  const [filter, setFilter] = useState<BookingFilter>("all");
 
-  const load = () => {
-    setLoading(true);
-    setLoadError(null);
-    listMyBookings()
-      .then(({ bookings }) => setBookings(bookings))
-      .catch((err) =>
-        setLoadError(err instanceof Error ? err.message : "Could not load your bookings.")
-      )
-      .finally(() => setLoading(false));
-  };
+  const filteredBookings = bookings.filter((b) =>
+    filter === "all"
+      ? true
+      : filter === "open"
+        ? OPEN_STATUSES.has(b.status)
+        : CANCELLED_STATUSES.has(b.status)
+  );
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void useStore.getState().loadBookings();
   }, []);
 
   const handleCancel = async (booking: ClientBooking) => {
@@ -195,7 +84,7 @@ function BookingsHome({ auth }: { auth: UseAuth }) {
     try {
       await cancelBooking(booking.id);
       setBanner({ ok: true, message: "Booking cancelled." });
-      load();
+      await useStore.getState().loadBookings(true);
     } catch (err) {
       setBanner({ ok: false, message: err instanceof Error ? err.message : "Could not cancel the booking." });
     } finally {
@@ -229,8 +118,39 @@ function BookingsHome({ auth }: { auth: UseAuth }) {
         ) : bookings.length === 0 ? (
           <p className="wx-book-note">You haven't booked any sessions yet.</p>
         ) : (
-          <div className="wx-my-bookings">
-            {bookings.map((b) => {
+          <>
+            <div className="wx-question-tabs" role="tablist" aria-label="Filter bookings">
+              <button
+                type="button"
+                className={filter === "all" ? "is-active" : ""}
+                onClick={() => setFilter("all")}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className={filter === "open" ? "is-active" : ""}
+                onClick={() => setFilter("open")}
+              >
+                Open
+              </button>
+              <button
+                type="button"
+                className={filter === "cancelled" ? "is-active" : ""}
+                onClick={() => setFilter("cancelled")}
+              >
+                Cancelled
+              </button>
+            </div>
+            {filteredBookings.length === 0 ? (
+              <p className="wx-book-note">
+                {filter === "open"
+                  ? "You don't have any open bookings."
+                  : "You don't have any cancelled bookings."}
+              </p>
+            ) : (
+              <div className="wx-my-bookings">
+            {filteredBookings.map((b) => {
               const cancellable = CANCELLABLE.includes(b.status);
               const isMeetingRelevant = b.status === "Confirmed" || b.status === "Rescheduled";
               return (
@@ -283,7 +203,9 @@ function BookingsHome({ auth }: { auth: UseAuth }) {
                 </div>
               );
             })}
-          </div>
+              </div>
+            )}
+          </>
         )}
 
         {banner ? (

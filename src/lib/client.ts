@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-
 // Client-bundled code: never touch `process` directly (not defined in the browser).
 const env =
   typeof process !== "undefined" && typeof process.env === "object" ? process.env : {};
@@ -254,45 +252,3 @@ export function formatPrice(paise: number | null | undefined): string {
       : amount.toLocaleString("en-IN", { minimumFractionDigits: 2 });
   return `\u20B9${formatted}`;
 }
-
-export function useAuth() {
-  const [token, setToken] = useState<string | null>(() => getAccessToken());
-  const [user, setUser] = useState<PublicUser | null>(null);
-
-  useEffect(() => {
-    if (!token) {
-      setUser(null);
-      return;
-    }
-    let cancelled = false;
-    fetchMe()
-      .then(({ user }) => {
-        if (!cancelled) setUser(user);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          clearAuth();
-          setToken(null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
-  const applyAuth = (res: AuthResponse) => {
-    persistAuth(res);
-    setToken(res.accessToken);
-    setUser(res.user);
-  };
-
-  const signOut = () => {
-    clearAuth();
-    setToken(null);
-    setUser(null);
-  };
-
-  return { token, user, applyAuth, signOut };
-}
-
-export type UseAuth = ReturnType<typeof useAuth>;

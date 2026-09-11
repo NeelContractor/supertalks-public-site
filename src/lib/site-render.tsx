@@ -5,18 +5,15 @@ import {
   completePayment,
   createBooking,
   fetchOpenSlots,
-  fetchQuestionMessages,
   formatPrice,
-  listMyQuestions,
   sendQuestionMessage,
-  useAuth,
-  type ChatMessage,
   type ClientQuestion,
   type OpenSlot,
-  type UseAuth,
 } from "./client";
+import { useAuth, type UseAuth } from "./useAuth";
 import { AuthModal } from "./AuthModal";
 import { PayConfirm } from "./pay";
+import { useStore } from "./store";
 
 const DISPLAY_STACKS: Record<string, string> = {
   serif: '"eschaton", Georgia, serif',
@@ -30,6 +27,13 @@ const BODY_STACKS: Record<string, string> = {
 
 function str(value: unknown, fallback: string): string {
   return typeof value === "string" && value !== "" ? value : fallback;
+}
+
+function scrollToQuestion(e: React.MouseEvent) {
+  e.preventDefault();
+  document
+    .querySelector('[data-st-section-id="question"]')
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function num(value: unknown, fallback: number): number | string {
@@ -420,13 +424,6 @@ function StyleToolbar({
           style={{ width: 30, height: 26, padding: 0, border: "none", background: "transparent", cursor: "pointer", flexShrink: 0 }}
           onChange={(e) => onChange({ style: { ...style, color: e.target.value } })}
         />
-        <input
-          type="text"
-          value={style.color ?? ""}
-          style={inputBase}
-          onChange={(e) => onChange({ style: { ...style, color: e.target.value } })}
-          placeholder="e.g. #771609"
-        />
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <button
@@ -629,7 +626,6 @@ function HeroSection({
   const props = propsOf(section);
   const siteName = p(props, "siteName", "My Site");
   const logo = p(props, "logo");
-  const logoAlt = p(props, "logoAlt", siteName);
 
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
@@ -637,7 +633,7 @@ function HeroSection({
         <header className="wx-header">
           <a href="#top" aria-label="Home">
             {logo ? (
-              <img src={logo} alt={logoAlt} />
+              <img src={logo} alt="supertalks" />
             ) : (
               <Editable as="span" className="wx-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
@@ -663,12 +659,12 @@ function HeroSection({
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
           <Editable as="p" className="wx-hero-sub" field="subtitle" section={section} edit={edit} value={p(props, "subtitle")} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
-          <Editable as="a" className="wx-btn wx-btn-primary" field="ctaLabel" section={section} edit={edit} value={p(props, "ctaLabel", "Get Started")} href={p(props, "ctaLink", "#about")} onSelectField={(f) => onSelectField?.(section.id, f)}
+          <Editable as="a" className="wx-btn wx-btn-primary" field="ctaLabel" section={section} edit={edit} value={p(props, "ctaLabel", "Get Started")} href="#question" onClick={scrollToQuestion} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         </div>
 
         <div className="wx-hero-media">
-          <img src={p(props, "image")} alt={p(props, "imageAlt", "")} />
+          <img src={p(props, "image")} alt="supertalks" />
         </div>
       </div>
 
@@ -753,7 +749,7 @@ function AboutSection({
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         <Editable as="p" className="wx-body" field="body" section={section} edit={edit} value={p(props, "body")} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
-        <Editable as="a" className="wx-btn wx-btn-outline" field="buttonLabel" section={section} edit={edit} value={p(props, "buttonLabel", "Learn More")} href={p(props, "buttonLink", "#about")} onSelectField={(f) => onSelectField?.(section.id, f)}
+        <Editable as="a" className="wx-btn wx-btn-outline" field="buttonLabel" section={section} edit={edit} value={p(props, "buttonLabel", "Learn More")} href="#question" onClick={scrollToQuestion} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
       </div>
     </SectionShell>
@@ -775,7 +771,7 @@ function ImageBandSection({
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-scene" aria-hidden="true">
-        <img src={p(props, "image")} alt={p(props, "alt", "")} />
+        <img src={p(props, "image")} alt="supertalks" />
       </div>
     </SectionShell>
   );
@@ -1153,12 +1149,12 @@ function QuestionSection({
   const askRef = useRef<((body: { questionText: string; category: string }) => Promise<void>) | null>(null);
 
   const [tab, setTab] = useState<"ask" | "mine">("ask");
-  const [myQuestions, setMyQuestions] = useState<ClientQuestion[]>([]);
-  const [myLoading, setMyLoading] = useState(false);
-  const [myLoaded, setMyLoaded] = useState(false);
-  const [activeThread, setActiveThread] = useState<ClientQuestion | null>(null);
-  const [threadMessages, setThreadMessages] = useState<ChatMessage[]>([]);
-  const [threadLoading, setThreadLoading] = useState(false);
+  const myQuestions = useStore((s) => s.questions);
+  const questionsLoaded = useStore((s) => s.questionsLoaded);
+  const myLoading = useStore((s) => s.questionsLoading && !s.questionsLoaded);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const threadMessages = useStore((s) => (activeId ? s.messagesByQuestion[activeId] : undefined)) ?? [];
+  const threadLoading = useStore((s) => (activeId ? !!s.threadsLoading[activeId] : false));
   const [reply, setReply] = useState("");
   const [replySending, setReplySending] = useState(false);
   const [pendingPay, setPendingPay] = useState<{ paymentId: string; amountPaise: number } | null>(null);
@@ -1174,7 +1170,7 @@ function QuestionSection({
       setText("");
       setCategory("");
       setTab("mine");
-      setMyLoaded(false);
+      void useStore.getState().loadQuestions(true);
     } catch (err) {
       setStatus({
         ok: false,
@@ -1207,44 +1203,31 @@ function QuestionSection({
   };
 
   const openThread = (q: ClientQuestion) => {
-    setActiveThread(q);
-    setThreadMessages([]);
+    setActiveId(q.id);
     setReply("");
-    setThreadLoading(true);
-    fetchQuestionMessages(q.id)
-      .then(({ question, messages }) => {
-        setThreadMessages(messages);
-        setActiveThread((current) =>
-          current && current.id === question.id
-            ? { ...current, status: question.status }
-            : current
-        );
-      })
+    useStore
+      .getState()
+      .openThread(q.id)
       .catch((err) => {
         setStatus({ ok: false, message: err instanceof Error ? err.message : "Could not open this conversation." });
-      })
-      .finally(() => setThreadLoading(false));
+      });
   };
 
   const handleSendReply = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!activeThread || !reply.trim()) return;
+    if (!activeId || !reply.trim()) return;
     setReplySending(true);
     try {
-      const result = await sendQuestionMessage(activeThread.id, reply.trim());
+      const result = await sendQuestionMessage(activeId, reply.trim());
       if (result.requiresPayment) {
         // Hold the message behind a payment prompt; the text stays in the input.
         setPendingPay({ paymentId: result.payment.id, amountPaise: result.payment.amountPaise });
         return;
       }
-      setThreadMessages((prev) => [...prev, result.message]);
-      setActiveThread((current) =>
-        current && current.id === result.question.id
-          ? { ...current, status: result.question.status }
-          : current
-      );
+      useStore.getState().appendMessage(activeId, result.message);
+      useStore.getState().updateQuestionStatus(result.question.id, result.question.status);
       setReply("");
-      setMyLoaded(false);
+      void useStore.getState().loadQuestions(true);
     } catch (err) {
       setStatus({ ok: false, message: err instanceof Error ? err.message : "Could not send your reply." });
     } finally {
@@ -1253,21 +1236,17 @@ function QuestionSection({
   };
 
   const confirmPayment = async () => {
-    if (!pendingPay || !activeThread) return;
+    if (!pendingPay || !activeId) return;
     setPaying(true);
     try {
       const result = await completePayment(pendingPay.paymentId);
       setPendingPay(null);
-      if (result.message) setThreadMessages((prev) => [...prev, result.message!]);
+      if (result.message) useStore.getState().appendMessage(activeId, result.message);
       if (result.question) {
-        setActiveThread((current) =>
-          current && current.id === result.question!.id
-            ? { ...current, status: result.question!.status }
-            : current
-        );
+        useStore.getState().updateQuestionStatus(result.question.id, result.question.status);
       }
       setReply("");
-      setMyLoaded(false);
+      void useStore.getState().loadQuestions(true);
     } catch (err) {
       setStatus({ ok: false, message: err instanceof Error ? err.message : "Payment could not be completed." });
     } finally {
@@ -1276,23 +1255,15 @@ function QuestionSection({
   };
 
   useEffect(() => {
-    if (tab !== "mine" || !auth.token || myLoaded) return;
-    setMyLoading(true);
-    listMyQuestions()
-      .then(({ questions }) => {
-        setMyQuestions(questions);
-        setMyLoaded(true);
-      })
-      .catch((err) => {
-        setStatus({ ok: false, message: err instanceof Error ? err.message : "Could not load your questions." });
-      })
-      .finally(() => setMyLoading(false));
-  }, [tab, auth.token, myLoaded, authNonce]);
+    if (tab !== "mine" || !auth.token) return;
+    void useStore.getState().loadQuestions();
+  }, [tab, auth.token, authNonce]);
 
   const accepting = client?.isAcceptingQuestions !== false;
   const priceSuffix = client?.questionPricePaise != null ? ` · ${formatPrice(client.questionPricePaise)}` : "";
   const CLOSED_STATUSES = ["Rejected", "Refunded"];
-  const threadClosed = activeThread ? CLOSED_STATUSES.includes(activeThread.status) : false;
+  const activeQuestion = activeId ? myQuestions.find((q) => q.id === activeId) ?? null : null;
+  const threadClosed = activeQuestion ? CLOSED_STATUSES.includes(activeQuestion.status) : false;
 
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
@@ -1307,16 +1278,16 @@ function QuestionSection({
           <p className="wx-book-note">Questions are currently paused.</p>
         ) : (
           <>
-            {activeThread ? (
+            {activeQuestion ? (
               <div className="wx-chat">
-                <button type="button" className="wx-linkbtn wx-chat-back" onClick={() => setActiveThread(null)}>
+                <button type="button" className="wx-linkbtn wx-chat-back" onClick={() => setActiveId(null)}>
                   ← Back to your questions
                 </button>
                 <div className="wx-chat-question">
-                  <p className="wx-chat-question-text">{activeThread.questionText}</p>
+                  <p className="wx-chat-question-text">{activeQuestion.questionText}</p>
                   <p className="wx-book-note">
-                    {activeThread.status}
-                    {activeThread.category ? ` · ${activeThread.category}` : ""}
+                    {activeQuestion.status}
+                    {activeQuestion.category ? ` · ${activeQuestion.category}` : ""}
                     {client?.questionPricePaise != null
                       ? ` · ${formatPrice(client.questionPricePaise)}`
                       : ""}
@@ -1378,7 +1349,7 @@ function QuestionSection({
                     className={tab === "mine" ? "is-active" : ""}
                     onClick={() => setTab("mine")}
                   >
-                    Your Questions{myLoaded && myQuestions.length > 0 ? ` (${myQuestions.length})` : ""}
+                    Your Questions{questionsLoaded && myQuestions.length > 0 ? ` (${myQuestions.length})` : ""}
                   </button>
                 </div>
 
@@ -1495,13 +1466,12 @@ function FooterSection({
   const props = propsOf(section);
   const siteName = p(props, "siteName", "My Site");
   const logo = p(props, "logo");
-  const logoAlt = p(props, "logoAlt", siteName);
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <footer className="wx-footer">
         <div className="wx-footer-inner">
           <a className="wx-footer-logo" href="#top" aria-label={`${siteName} home`}>
-            {logo ? <img src={logo} alt={logoAlt} /> : <Editable as="span" className="wx-footer-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
+            {logo ? <img src={logo} alt="supertalks" /> : <Editable as="span" className="wx-footer-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />}
           </a>
           <div className="wx-footer-col">
@@ -1647,9 +1617,6 @@ const selectField = (sectionId: string, field: string) => {
 const FIELD_LABELS: Record<string, string> = {
   siteName: "Site Name",
   ctaLabel: "Button Text",
-  ctaLink: "Button Link",
-  logoAlt: "Logo Alt Text",
-  imageAlt: "Image Alt Text",
   buttonLabel: "Button Text",
   eyebrow: "Eyebrow",
   quote: "Quote",

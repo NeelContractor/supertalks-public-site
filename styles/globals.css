@@ -1805,7 +1805,12 @@
 }
 
 .wx-my-form {
-  margin-top: 20px;
+  margin: 20px auto 0;
+  max-width: 440px;
+}
+
+.wx-my-panel .wx-question-tabs {
+  justify-content: center;
 }
 
 .wx-my-form label input {
