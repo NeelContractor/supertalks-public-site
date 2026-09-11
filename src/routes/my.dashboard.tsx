@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Breadcrumbs } from "../lib/breadcrumbs";
 import {
   formatPrice,
   listMyBookings,
@@ -70,6 +71,7 @@ function AuthPanel({ onAuthenticated }: { onAuthenticated: (res: AuthResponse) =
   return (
     <main className="wx-page my-questions-page">
       <div className="wx-my-panel">
+        <Breadcrumbs />
         <h1>My Dashboard</h1>
         <p className="wx-book-note">Sign in (or create a free account) to see your bookings and questions in one place.</p>
         <div className="wx-question-tabs" role="tablist">
@@ -178,6 +180,7 @@ function DashboardHome({ auth }: { auth: UseAuth }) {
   return (
     <main className="wx-page my-questions-page">
       <div className="wx-my-panel">
+        <Breadcrumbs />
         <header className="wx-my-head">
           <div>
             <h1>My Dashboard</h1>
@@ -187,12 +190,6 @@ function DashboardHome({ auth }: { auth: UseAuth }) {
             Sign out
           </button>
         </header>
-
-        <p className="wx-book-note">
-          <Link className="wx-linkbtn" to="/">
-            ← Back to browsing
-          </Link>
-        </p>
 
         {loading ? (
           <p className="wx-book-note">Loading your dashboard…</p>
@@ -235,7 +232,7 @@ function DashboardHome({ auth }: { auth: UseAuth }) {
             <section className="wx-dash-card">
               <header className="wx-dash-card-head">
                 <h2>Recent Questions</h2>
-                <Link className="wx-linkbtn" to="/my/questions">
+                <Link className="wx-linkbtn" to="/my/questions" search={{ thread: undefined }}>
                   View all questions →
                 </Link>
               </header>
@@ -244,15 +241,21 @@ function DashboardHome({ auth }: { auth: UseAuth }) {
               ) : (
                 <ul className="wx-dash-list">
                   {recentQuestions.map((q) => (
-                    <li key={q.id} className="wx-dash-item">
-                      <p className="wx-my-question-text">{q.questionText}</p>
-                      <p className="wx-my-question-meta">
-                        {q.astrologer?.user.name ? `${q.astrologer.user.name} · ` : ""}
-                        {q.status}
-                        {q.lastMessage
-                          ? ` · ${q.lastMessage.senderRole === "Astrologer" ? "Astrologer" : "You"}: ${q.lastMessage.body.slice(0, 50)}`
-                          : ""}
-                      </p>
+                    <li key={q.id}>
+                      <Link
+                        to="/my/questions"
+                        search={{ thread: q.id }}
+                        className="wx-dash-item wx-dash-chat"
+                      >
+                        <p className="wx-my-question-text">{q.questionText}</p>
+                        <p className="wx-my-question-meta">
+                          {q.astrologer?.user.name ? `${q.astrologer.user.name} · ` : ""}
+                          {q.status}
+                          {q.lastMessage
+                            ? ` · ${q.lastMessage.senderRole === "Astrologer" ? "Astrologer" : "You"}: ${q.lastMessage.body.slice(0, 50)}`
+                            : ""}
+                        </p>
+                      </Link>
                     </li>
                   ))}
                 </ul>

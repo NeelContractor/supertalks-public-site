@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Breadcrumbs } from "../lib/breadcrumbs";
 import {
   completePayment,
   fetchQuestionMessages,
@@ -19,6 +20,10 @@ import { PayConfirm } from "../lib/pay";
 import { connectQuestionSocket } from "../lib/ws";
 
 export const Route = createFileRoute("/my/questions")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    ...search,
+    thread: typeof search.thread === "string" ? search.thread : undefined,
+  }),
   head: () => ({
     meta: [{ title: "My Questions | Supertalks" }],
   }),
@@ -75,6 +80,7 @@ function AuthPanel({ onAuthenticated }: { onAuthenticated: (res: AuthResponse) =
   return (
     <main className="wx-page my-questions-page">
       <div className="wx-my-panel">
+        <Breadcrumbs />
         <h1>My Questions</h1>
         <p className="wx-book-note">Sign in (or create a free account) to view all your question chats.</p>
         <div className="wx-question-tabs" role="tablist">
@@ -153,6 +159,8 @@ function AuthPanel({ onAuthenticated }: { onAuthenticated: (res: AuthResponse) =
 }
 
 function QuestionsHome({ auth }: { auth: UseAuth }) {
+  const navigate = useNavigate();
+  const { thread } = Route.useSearch();
   const [questions, setQuestions] = useState<ClientQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -182,6 +190,16 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Open a specific conversation when arriving with ?thread=<questionId>
+  // (e.g. clicking a recent question from the dashboard).
+  useEffect(() => {
+    if (!thread || loading || activeId === thread) return;
+    const target = questions.find((q) => q.id === thread);
+    if (!target) return;
+    fetchThread(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread, questions, loading, activeId]);
 
   const active = questions.find((q) => q.id === activeId) ?? null;
 
@@ -274,15 +292,16 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
   return (
     <main className="wx-page my-questions-page">
       <div className="wx-my-panel">
+        <Breadcrumbs />
         <header className="wx-my-head">
           <div>
             <h1>My Questions</h1>
             <p className="wx-book-note">Signed in as {auth.user!.email}.</p>
-            <p className="wx-book-note">
+            {/* <p className="wx-book-note">
               <Link className="wx-linkbtn" to="/my/bookings">
                 View your bookings →
               </Link>
-            </p>
+            </p> */}
           </div>
           <button type="button" className="wx-linkbtn" onClick={auth.signOut}>
             Sign out
@@ -292,7 +311,14 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
         {active ? (
           <div className="wx-chat">
             <p className="wx-book-note">
-              <button type="button" className="wx-linkbtn" onClick={() => setActiveId(null)}>
+              <button
+                type="button"
+                className="wx-linkbtn"
+                onClick={() => {
+                  setActiveId(null);
+                  navigate({ to: "/my/questions", search: { thread: undefined } });
+                }}
+              >
                 ← All conversations
               </button>
             </p>
@@ -345,11 +371,6 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
           </div>
         ) : (
           <>
-            <p className="wx-book-note">
-              <Link className="wx-linkbtn" to="/">
-                ← Back to browsing
-              </Link>
-            </p>
             {loading ? (
               <p className="wx-book-note">Loading your questions…</p>
             ) : loadError ? (

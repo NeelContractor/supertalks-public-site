@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Breadcrumbs } from "../lib/breadcrumbs";
 import {
   cancelBooking,
   formatPrice,
@@ -84,6 +85,7 @@ function AuthPanel({ onAuthenticated }: { onAuthenticated: (res: AuthResponse) =
   return (
     <main className="wx-page my-questions-page">
       <div className="wx-my-panel">
+        <Breadcrumbs />
         <h1>My Bookings</h1>
         <p className="wx-book-note">Sign in (or create a free account) to view all your sessions.</p>
         <div className="wx-question-tabs" role="tablist">
@@ -204,26 +206,21 @@ function BookingsHome({ auth }: { auth: UseAuth }) {
   return (
     <main className="wx-page my-questions-page">
       <div className="wx-my-panel">
+        <Breadcrumbs />
         <header className="wx-my-head">
           <div>
             <h1>My Bookings</h1>
             <p className="wx-book-note">Signed in as {auth.user!.email}.</p>
-            <p className="wx-book-note">
-              <Link className="wx-linkbtn" to="/my/questions">
+            {/* <p className="wx-book-note">
+              <Link className="wx-linkbtn" to="/my/questions" search={{ thread: undefined }}>
                 View your question chats →
               </Link>
-            </p>
+            </p> */}
           </div>
           <button type="button" className="wx-linkbtn" onClick={auth.signOut}>
             Sign out
           </button>
         </header>
-
-        <p className="wx-book-note">
-          <Link className="wx-linkbtn" to="/">
-            ← Back to browsing
-          </Link>
-        </p>
 
         {loading ? (
           <p className="wx-book-note">Loading your bookings…</p>

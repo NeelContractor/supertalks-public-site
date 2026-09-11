@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { SiteRenderer } from "../lib/site-render";
+import { applySiteTheme, saveSiteTheme } from "../lib/theme";
 import type { FieldStyle, SiteDocument, SitePayload } from "../types";
 
 // Client-bundled code: never touch `process` directly (not defined in the browser).
@@ -35,11 +36,21 @@ export const Route = createFileRoute("/$slug")({
 
 function SitePage() {
   const data = Route.useLoaderData();
+  const { slug } = Route.useParams();
   const [site, setSite] = useState(data.site);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
   const [edit, setEdit] = useState(false);
   const lastSelectRef = useRef<{ sectionId: string; fieldKey: string | null } | null>(null);
+
+  // Lift this astrologer's design tokens onto the whole site and remember them
+  // so the client dashboard/questions/bookings pages use the same theme.
+  // Remember the astrologer too, so breadcrumb "Home" returns to their site.
+  useEffect(() => {
+    applySiteTheme(site?.design ?? null);
+    saveSiteTheme(site?.design ?? null);
+    localStorage.setItem("supertalks:site-slug", slug);
+  }, [site?.design, slug]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
