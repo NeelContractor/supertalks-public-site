@@ -25,6 +25,10 @@ const BODY_STACKS: Record<string, string> = {
   serif: '"eschaton", Georgia, serif',
 };
 
+// Sections whose content is required for bookings/questions and must stay
+// fixed for the astrologer (not editable in the builder preview).
+const LOCKED_SECTIONS = new Set(["book", "question"]);
+
 function str(value: unknown, fallback: string): string {
   return typeof value === "string" && value !== "" ? value : fallback;
 }
@@ -220,7 +224,7 @@ function Editable({
     if (el.textContent !== value) el.textContent = value;
   }, [value, field, edit]);
 
-  if (edit) {
+  if (edit && !LOCKED_SECTIONS.has(section.id)) {
     return React.createElement(
       as,
       {

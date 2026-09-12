@@ -53,19 +53,60 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
+type RetryInit = RequestInit & { retried?: boolean };
+
+/**
+ * Exchange the stored refresh token for a fresh pair. Single-flight: parallel
+ * 401s share one refresh, since the backend rotates (revokes) it on each use.
+ */
+let refreshPromise: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (!hasLocalStorage) return false;
+  const refreshToken = localStorage.getItem(REFRESH_KEY);
+  if (!refreshToken) return false;
+  try {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { accessToken: string; refreshToken: string };
+    localStorage.setItem(ACCESS_KEY, data.accessToken);
+    localStorage.setItem(REFRESH_KEY, data.refreshToken);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function request<T>(path: string, init: RetryInit = {}): Promise<T> {
+  const { retried = false, ...requestInit } = init;
+  const headers = new Headers(requestInit.headers);
   headers.set("Accept", "application/json");
-  if (typeof init.body === "string") headers.set("Content-Type", "application/json");
+  if (typeof requestInit.body === "string") headers.set("Content-Type", "application/json");
 
   const token = getAccessToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  const res = await fetch(`${API_BASE}${path}`, { ...requestInit, headers });
   const text = await res.text();
   const data: unknown = text ? JSON.parse(text) : null;
 
   if (!res.ok) {
+    if (res.status === 401 && token && !retried) {
+      // Token probably expired: try to refresh once, then replay the request.
+      if (!refreshPromise) {
+        refreshPromise = refreshAccessToken().finally(() => {
+          refreshPromise = null;
+        });
+      }
+      const refreshed = await refreshPromise;
+      if (refreshed) {
+        return request<T>(path, { ...requestInit, retried: true });
+      }
+    }
     const message =
       data &&
       typeof data === "object" &&

@@ -3,7 +3,7 @@ import { getAccessToken, type ChatMessage } from "./client";
 // Client-bundled code: never touch `process` directly (not defined in the browser).
 const env =
   typeof process !== "undefined" && typeof process.env === "object" ? process.env : {};
-export const WS_URL = env.BUN_PUBLIC_WS_URL ?? "ws://localhost:3003";
+export const WS_URL = env.BUN_PUBLIC_WS_URL ?? "ws://localhost:3000";
 
 export type RealtimeEvent =
   | {
