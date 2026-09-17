@@ -1,19 +1,26 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FieldStyle, SiteDocument, SiteSectionDoc } from "../types";
 import {
-  askQuestion,
   completePayment,
   createBooking,
   fetchOpenSlots,
   formatPrice,
+  orderQuestions,
   sendQuestionMessage,
+  type BookingPaymentIntent,
   type ClientQuestion,
   type OpenSlot,
+  type QuestionOrderClientDetails,
+  type QuestionOrderItem,
 } from "./client";
 import { useAuth, type UseAuth } from "./useAuth";
 import { AuthModal } from "./AuthModal";
 import { PayConfirm } from "./pay";
 import { useStore } from "./store";
+import anahataImg from "@/assets/icons/anahata.png"
+import lotusImg from "@/assets/icons/lotus.png"
+import shellImg from "@/assets/icons/shell.png"
+import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react"
 
 const DISPLAY_STACKS: Record<string, string> = {
   serif: '"eschaton", Georgia, serif',
@@ -553,6 +560,7 @@ function ApproachIcon({ name }: { name: string }) {
 export interface SiteClientInfo {
   slug: string;
   astrologerId?: string;
+  astrologerName?: string;
   questionPricePaise?: number;
   callPricePerSlotPaise?: number;
   slotDurationMinutes?: number;
@@ -643,7 +651,7 @@ function HeroSection({
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
             )}
           </a>
-          <button
+          {/* <button
             type="button"
             className="wx-menu-btn"
             onClick={(e) => {
@@ -655,7 +663,7 @@ function HeroSection({
             aria-label="Open navigation"
           >
             <MenuIcon />
-          </button>
+          </button> */}
         </header>
 
         <div className="wx-hero-copy">
@@ -850,7 +858,7 @@ function ApproachSection({
           {items.map((item, i) => (
             <div className="wx-approach-row" key={i}>
               {item["icon"] ? (
-                <ApproachIcon name={String(item["icon"])} />
+                <img src={[anahataImg, lotusImg, shellImg][i % 3]} alt="Image" width={100} height={100} />
               ) : (
                 <span className="wx-approach-mark">{i + 1}</span>
               )}
@@ -972,10 +980,28 @@ function BookingSection({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [order, setOrder] = useState<BookingPaymentIntent | null>(null);
+  const [gatewayOpen, setGatewayOpen] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [weekOffset, setWeekOffset] = useState(0);
   const pendingRef = useRef<string | null>(null);
   const bookRef = useRef<((startAt: string) => Promise<void>) | null>(null);
 
-  const days = upcomingDays(14);
+  const days = upcomingDays(28);
+  const weekSize = 7;
+  const maxWeekOffset = Math.max(0, Math.ceil(days.length / weekSize) - 1);
+  const weekDays = days.slice(weekOffset * weekSize, weekOffset * weekSize + weekSize);
+
+  const goToWeek = (next: number) => {
+    const clamped = Math.max(0, Math.min(maxWeekOffset, next));
+    setWeekOffset(clamped);
+    const shown = days.slice(clamped * weekSize, clamped * weekSize + weekSize);
+    if (!shown.some((day) => day.key === date) && shown[0]) {
+      setDate(shown[0].key);
+    }
+  };
 
   useEffect(() => {
     if (edit) return;
@@ -1000,15 +1026,22 @@ function BookingSection({
     return () => {
       cancelled = true;
     };
-  }, [date, edit, client?.slug]);
+  }, [date, edit, client?.slug, refreshNonce]);
 
   const book = async (startAt: string) => {
     if (!client?.astrologerId) return;
     setSubmitting(true);
     setStatus(null);
     try {
-      await createBooking(client.astrologerId, startAt, crypto.randomUUID());
-      setStatus({ ok: true, message: "Session booked! Complete payment to confirm your slot." });
+      const { payment } = await createBooking(client.astrologerId, startAt, crypto.randomUUID());
+      setSelectedSlot(startAt);
+      if (payment) {
+        setOrder(payment);
+        setGatewayOpen(true);
+      } else {
+        setStatus({ ok: true, message: "Session booked and confirmed." });
+        void useStore.getState().loadBookings(true);
+      }
     } catch (err) {
       setStatus({
         ok: false,
@@ -1019,6 +1052,27 @@ function BookingSection({
     }
   };
   bookRef.current = book;
+
+  const settleOrder = async () => {
+    if (!order) return;
+    setPaying(true);
+    setStatus(null);
+    try {
+      await completePayment(order.id);
+      setGatewayOpen(false);
+      setOrder(null);
+      setStatus({ ok: true, message: "Payment successful! Your session is confirmed." });
+      void useStore.getState().loadBookings(true);
+      setRefreshNonce((n) => n + 1);
+    } catch (err) {
+      setStatus({
+        ok: false,
+        message: err instanceof Error ? err.message : "Payment failed. Please try again.",
+      });
+    } finally {
+      setPaying(false);
+    }
+  };
 
   useEffect(() => {
     const startAt = pendingRef.current;
@@ -1052,17 +1106,37 @@ function BookingSection({
               <p className="wx-book-note">Bookings are currently paused. Please check back soon.</p>
             ) : (
               <>
-                <div className="wx-book-days">
-                  {days.map((day) => (
-                    <button
-                      key={day.key}
-                      type="button"
-                      className={day.key === date ? "is-active" : ""}
-                      onClick={() => setDate(day.key)}
-                    >
-                      {day.label}
-                    </button>
-                  ))}
+                <div className="wx-book-week">
+                  <button
+                    type="button"
+                    className="wx-book-week-nav"
+                    aria-label="Previous week"
+                    disabled={weekOffset === 0}
+                    onClick={() => goToWeek(weekOffset - 1)}
+                  >
+                    <ArrowLeftIcon />
+                  </button>
+                  <div className="wx-book-days">
+                    {weekDays.map((day) => (
+                      <button
+                        key={day.key}
+                        type="button"
+                        className={day.key === date ? "is-active" : ""}
+                        onClick={() => setDate(day.key)}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="wx-book-week-nav"
+                    aria-label="Next week"
+                    disabled={weekOffset >= maxWeekOffset}
+                    onClick={() => goToWeek(weekOffset + 1)}
+                  >
+                    <ArrowRightIcon />
+                  </button>
                 </div>
                 <div className="wx-book-slots">
                   {loading ? (
@@ -1114,6 +1188,35 @@ function BookingSection({
                 "Sign in (or create a free account) to book a slot."
               )}
             </p>
+            <QuestionGatewayModal
+              open={gatewayOpen}
+              amountPaise={order?.amountPaise ?? client?.callPricePerSlotPaise ?? 0}
+              perItemPaise={order?.amountPaise ?? client?.callPricePerSlotPaise ?? 0}
+              perItemLabel="session"
+              items={
+                selectedSlot
+                  ? [
+                      {
+                        label: "1-on-1 consultation call",
+                        category: new Date(selectedSlot).toLocaleString(undefined, {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }),
+                      },
+                    ]
+                  : []
+              }
+              merchant={client?.astrologerName ?? ""}
+              paying={paying}
+              onPay={settleOrder}
+              onCancel={() => {
+                setGatewayOpen(false);
+                setOrder(null);
+              }}
+            />
           </>
         )}
       </div>
@@ -1124,7 +1227,7 @@ function BookingSection({
 function QuestionSection({
   section,
   edit,
-  selected,
+  selected: isSectionSelected,
   onSelect,
   onSelectField,
   onEditValue,
@@ -1145,12 +1248,12 @@ function QuestionSection({
   authNonce: number;
 }) {
   const props = propsOf(section);
-  const [text, setText] = useState("");
-  const [category, setCategory] = useState("");
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const pendingRef = useRef<{ questionText: string; category: string } | null>(null);
-  const askRef = useRef<((body: { questionText: string; category: string }) => Promise<void>) | null>(null);
+  const pendingRef = useRef<{ items: QuestionOrderItem[]; clientDetails: QuestionOrderClientDetails } | null>(null);
+  const createOrderRef = useRef<
+    ((items: QuestionOrderItem[], clientDetails: QuestionOrderClientDetails) => Promise<void>) | null
+  >(null);
 
   const [tab, setTab] = useState<"ask" | "mine">("ask");
   const myQuestions = useStore((s) => s.questions);
@@ -1164,46 +1267,140 @@ function QuestionSection({
   const [pendingPay, setPendingPay] = useState<{ paymentId: string; amountPaise: number } | null>(null);
   const [paying, setPaying] = useState(false);
 
-  const ask = async (body: { questionText: string; category: string }) => {
+  // ---- Category & question selection (pick questions across all topics) ----
+  const topics = itemsOf(props, "topics")
+    .map((topic) => ({
+      title: p(topic, "title", "Questions"),
+      description: p(topic, "description", "") || p(topic, "text", ""),
+      questions: itemsOf(topic, "questions")
+        .map((q) => p(q, "label", "").trim())
+        .filter((label) => label.length > 0),
+    }))
+    .filter((topic) => topic.questions.length > 0);
+  const pricePaise = typeof client?.questionPricePaise === "number" ? client.questionPricePaise : 0;
+
+  const [categoryIndex, setCategoryIndex] = useState<number | null>(null);
+  const [picked, setPicked] = useState<QuestionOrderItem[]>([]);
+  const [order, setOrder] = useState<{ id: string; amountPaise: number; currency: string } | null>(null);
+  const [gatewayOpen, setGatewayOpen] = useState(false);
+  const [clientDetails, setClientDetails] = useState<QuestionOrderClientDetails>({
+    clientName: "",
+    birthDate: "",
+    birthTime: "",
+    birthPlace: "",
+  });
+  const setDetail = (key: keyof QuestionOrderClientDetails, value: string) =>
+    setClientDetails((cur) => ({ ...cur, [key]: value }));
+
+  const activeTopic = categoryIndex != null && topics[categoryIndex] ? topics[categoryIndex] : null;
+
+  const selectCategory = (index: number) => setCategoryIndex(index);
+
+  const isQuestionPicked = (question: string, category: string) =>
+    picked.some((q) => q.questionText === question && q.category === category);
+
+  const toggleQuestion = (question: string, category: string) => {
+    setPicked((cur) =>
+      cur.some((q) => q.questionText === question && q.category === category)
+        ? cur.filter((q) => !(q.questionText === question && q.category === category))
+        : [...cur, { questionText: question, category }],
+    );
+  };
+
+  const entryList: {
+    key: string;
+    label: string;
+    category: string;
+  }[] = picked.map((q) => ({
+    key: `${q.category ?? "General"}::${q.questionText}`,
+    label: q.questionText,
+    category: q.category ?? "General",
+  }));
+
+  const totalCount = entryList.length;
+  const totalPaise = totalCount * pricePaise;
+
+  const createOrder = async (items: QuestionOrderItem[], details: QuestionOrderClientDetails) => {
     if (!client?.astrologerId) return;
     setSubmitting(true);
     setStatus(null);
     try {
-      await askQuestion(client.astrologerId, body.questionText, body.category || "General");
-      setStatus({ ok: true, message: "Question sent! You'll get a personal written answer." });
-      setText("");
-      setCategory("");
-      setTab("mine");
-      void useStore.getState().loadQuestions(true);
+      const result = await orderQuestions(client.astrologerId, items, details);
+      setOrder(result.payment);
+      setGatewayOpen(true);
     } catch (err) {
       setStatus({
         ok: false,
-        message: err instanceof Error ? err.message : "Could not send your question. Please try again.",
+        message: err instanceof Error ? err.message : "Could not create your order. Please try again.",
       });
     } finally {
       setSubmitting(false);
     }
   };
-  askRef.current = ask;
+  createOrderRef.current = createOrder;
 
   useEffect(() => {
     const pending = pendingRef.current;
-    if (pending && auth.token) {
+    if (pending && auth.token && client?.astrologerId) {
       pendingRef.current = null;
-      void askRef.current?.(pending);
+      void createOrderRef.current?.(pending.items, pending.clientDetails);
     }
-  }, [authNonce, auth.token]);
+  }, [authNonce, auth.token, client?.astrologerId]);
 
-  const handleAsk = (event: React.FormEvent) => {
-    event.preventDefault();
-    const body = { questionText: text.trim(), category: category.trim() };
-    if (!body.questionText) return;
+  const handleProceed = () => {
+    const details = clientDetails;
+    if (
+      entryList.length === 0 ||
+      pricePaise <= 0 ||
+      !details.clientName.trim() ||
+      !details.birthDate ||
+      !details.birthTime ||
+      !details.birthPlace.trim()
+    )
+      return;
+    const items: QuestionOrderItem[] = entryList.map((entry) => ({
+      questionText: entry.label,
+      category: entry.category,
+    }));
+    const cleanDetails: QuestionOrderClientDetails = {
+      clientName: details.clientName.trim(),
+      birthDate: details.birthDate,
+      birthTime: details.birthTime,
+      birthPlace: details.birthPlace.trim(),
+    };
     if (!auth.token || !client?.astrologerId) {
-      pendingRef.current = body;
+      pendingRef.current = { items, clientDetails: cleanDetails };
       onNeedAuth();
       return;
     }
-    void ask(body);
+    void createOrder(items, cleanDetails);
+  };
+
+  const settleOrder = async () => {
+    if (!order) return;
+    setPaying(true);
+    setStatus(null);
+    try {
+      await completePayment(order.id);
+      setGatewayOpen(false);
+      setOrder(null);
+      setCategoryIndex(null);
+      setPicked([]);
+      setStatus({
+        ok: true,
+        message:
+          "Payment successful! Your questions have been sent and you'll get personal answers in your question chat.",
+      });
+      setTab("mine");
+      void useStore.getState().loadQuestions(true);
+    } catch (err) {
+      setStatus({
+        ok: false,
+        message: err instanceof Error ? err.message : "Payment could not be completed.",
+      });
+    } finally {
+      setPaying(false);
+    }
   };
 
   const openThread = (q: ClientQuestion) => {
@@ -1264,13 +1461,12 @@ function QuestionSection({
   }, [tab, auth.token, authNonce]);
 
   const accepting = client?.isAcceptingQuestions !== false;
-  const priceSuffix = client?.questionPricePaise != null ? ` · ${formatPrice(client.questionPricePaise)}` : "";
   const CLOSED_STATUSES = ["Rejected", "Refunded"];
   const activeQuestion = activeId ? myQuestions.find((q) => q.id === activeId) ?? null : null;
   const threadClosed = activeQuestion ? CLOSED_STATUSES.includes(activeQuestion.status) : false;
 
   return (
-    <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
+    <SectionShell section={section} edit={edit} selected={isSectionSelected} onSelect={onSelect}>
       <div className="wx-question">
         <div className="wx-question-head">
           <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "Ask a Question")} onSelectField={(f) => onSelectField?.(section.id, f)}
@@ -1359,36 +1555,200 @@ function QuestionSection({
 
                 {tab === "ask" ? (
                   <>
-                    <form className="wx-question-form" onSubmit={handleAsk}>
-                      <label>
-                        Your question
-                        <textarea
-                          required
-                          rows={4}
-                          value={text}
-                          onChange={(e) => setText(e.target.value)}
-                          placeholder="Ask anything you'd like a personal answer to…"
-                        />
-                      </label>
-                      <label>
-                        Category
-                        <input
-                          type="text"
-                          value={category}
-                          onChange={(e) => setCategory(e.target.value)}
-                          placeholder="e.g. Career, Love, Health"
-                        />
-                      </label>
-                      <button type="submit" className="wx-btn wx-btn-primary" disabled={submitting}>
-                        {submitting
-                          ? "Sending…"
-                          : (
-                            <Editable as="span" field="buttonLabel" section={section} edit={edit} value={p(props, "buttonLabel", "Ask Question")} onSelectField={(f) => onSelectField?.(section.id, f)}
-                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+                    <div className="max-w-4xl">
+                      <header className="m-8">
+                        <p className="text-sm font-semibold text-indigo-600 mb-2">STEP 1 OF 2</p>
+                        <h3 className="text-2xl md:text-3xl font-bold text-gray-900">Select Your Question Topic</h3>
+                        <p className="mt-2 text-gray-500">Choose a topic and select the questions you want answered.</p>
+                      </header>
+
+                      {topics.length === 0 ? (
+                        <p className="wx-book-note">No question topics are available right now.</p>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                            {topics.map((topic, index) => {
+                              const isCategorySelected = categoryIndex === index;
+                              return (
+                                <button
+                                  key={`${topic.title}-${index}`}
+                                  type="button"
+                                  onClick={() => selectCategory(index)}
+                                  className={`text-left rounded-2xl border-2 p-5 transition-all duration-200 ${
+                                    isCategorySelected
+                                      ? "border-indigo-600 bg-indigo-50 shadow-md"
+                                      : "border-gray-200 bg-white hover:border-indigo-300 hover:shadow-md"
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div>
+                                      <h4 className="text-lg font-bold text-gray-900">{topic.title}</h4>
+                                      {topic.description ? (
+                                        <p className="mt-2 text-sm text-gray-500">{topic.description}</p>
+                                      ) : null}
+                                    </div>
+                                    {isCategorySelected && <span className="text-indigo-600 text-xl">✓</span>}
+                                  </div>
+                                  <div className="mt-4 text-sm font-medium text-indigo-600">
+                                    {topic.questions.length} question{topic.questions.length === 1 ? "" : "s"}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {activeTopic ? (
+                            <div className="border-t border-gray-200 pt-8">
+                              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-5">
+                                <div>
+                                  <h4 className="text-xl md:text-2xl font-bold text-gray-900">{activeTopic.title}</h4>
+                                  <p className="text-sm text-gray-500 mt-1">Select the questions you want to ask.</p>
+                                </div>
+                                <div className="text-sm font-semibold text-indigo-600">
+                                  {totalCount} selected
+                                  {pricePaise > 0 ? ` · ${formatPrice(pricePaise)} each` : ""}
+                                </div>
+                              </div>
+
+                              <div className="space-y-3">
+                                {activeTopic.questions.map((question, index) => {
+                                  const isQuestionSelected = isQuestionPicked(question, activeTopic.title);
+                                  return (
+                                    <button
+                                      key={question}
+                                      type="button"
+                                      onClick={() => toggleQuestion(question, activeTopic.title)}
+                                      className={`w-full flex items-start gap-4 text-left p-4 rounded-xl border transition-all ${
+                                        isQuestionSelected
+                                          ? "border-indigo-600 bg-indigo-50"
+                                          : "border-gray-200 hover:border-indigo-300 hover:bg-gray-50"
+                                      }`}
+                                    >
+                                      <div
+                                        className={`flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center ${
+                                          isQuestionSelected
+                                            ? "bg-indigo-600 border-indigo-600 text-white"
+                                            : "border-gray-300 bg-white"
+                                        }`}
+                                      >
+                                        {isQuestionSelected && <span className="text-sm">✓</span>}
+                                      </div>
+                                      <div className="flex-1">
+                                        <span className="text-xs font-semibold text-gray-400">QUESTION {index + 1}</span>
+                                        <p className="mt-1 text-gray-800 font-medium">{question}</p>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded-2xl bg-gray-50 border border-dashed border-gray-300 p-8 text-center">
+                              <div className="text-4xl mb-3">✨</div>
+                              <h4 className="font-semibold text-gray-800">Choose a topic to continue</h4>
+                              <p className="text-sm text-gray-500 mt-1">
+                                Select one of the topics above to pick your questions.
+                              </p>
+                            </div>
                           )}
-                        {submitting ? "" : priceSuffix}
-                      </button>
-                    </form>
+
+                          <p className="mt-6 text-sm text-gray-500">
+                            Can't find your exact question?{" "}
+                            <a href="#book" className="font-semibold text-indigo-600 hover:underline">
+                              Book a slot
+                            </a>{" "}
+                            for a personalised consultation.
+                          </p>
+                        </>
+                      )}
+
+                      <div className="mt-8 pt-6 border-t border-gray-200">
+                        {totalCount > 0 && (
+                          <div className="mb-6 rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                            <h4 className="text-sm font-bold text-gray-900">Your birth details</h4>
+                            <p className="mt-1 text-xs text-gray-500">
+                              All fields are required for an accurate reading.
+                            </p>
+                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <label className="block sm:col-span-2">
+                                <span className="block text-sm font-medium text-gray-700">
+                                  Your name <span className="text-red-500">*</span>
+                                </span>
+                                <input
+                                  type="text"
+                                  value={clientDetails.clientName}
+                                  onChange={(e) => setDetail("clientName", e.target.value)}
+                                  placeholder="Full name"
+                                  className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="block text-sm font-medium text-gray-700">
+                                  Birth date <span className="text-red-500">*</span>
+                                </span>
+                                <input
+                                  type="date"
+                                  value={clientDetails.birthDate}
+                                  onChange={(e) => setDetail("birthDate", e.target.value)}
+                                  className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="block text-sm font-medium text-gray-700">
+                                  Birth time <span className="text-red-500">*</span>
+                                </span>
+                                <input
+                                  type="time"
+                                  value={clientDetails.birthTime}
+                                  onChange={(e) => setDetail("birthTime", e.target.value)}
+                                  className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none"
+                                />
+                              </label>
+                              <label className="block sm:col-span-2">
+                                <span className="block text-sm font-medium text-gray-700">
+                                  Birth place <span className="text-red-500">*</span>
+                                </span>
+                                <input
+                                  type="text"
+                                  value={clientDetails.birthPlace}
+                                  onChange={(e) => setDetail("birthPlace", e.target.value)}
+                                  placeholder="City, country"
+                                  className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none"
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex flex-col-reverse md:flex-row md:items-center md:justify-between gap-4">
+                          <p className="text-sm text-gray-500">
+                            {totalCount > 0
+                              ? `${totalCount} question${totalCount === 1 ? "" : "s"} selected${
+                                  pricePaise > 0
+                                    ? ` · Total ${formatPrice(totalPaise)}`
+                                    : " · Pricing not configured yet"
+                                }`
+                              : "No questions selected"}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleProceed}
+                            disabled={
+                              totalCount === 0 ||
+                              pricePaise <= 0 ||
+                              submitting ||
+                              !clientDetails.clientName.trim() ||
+                              !clientDetails.birthDate ||
+                              !clientDetails.birthTime ||
+                              !clientDetails.birthPlace.trim()
+                            }
+                            className="w-full md:w-auto bg-gradient-to-r from-green-500 to-teal-500 text-white px-6 md:px-8 py-3 md:py-4 rounded-full font-bold text-lg shadow-lg hover:shadow-xl transition transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                          >
+                            <span className="mr-2">✓</span>
+                            {submitting ? "Please wait…" : "Proceed to Payment"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </>
                 ) : !auth.user ? (
                   <div className="wx-book-note">
@@ -1402,13 +1762,8 @@ function QuestionSection({
                 ) : myQuestions.length === 0 ? (
                   <p className="wx-book-note">You haven't asked any questions yet.</p>
                 ) : (
-                  <div className="wx-my-questions">
-                    <p className="wx-book-note">
-                      <a className="wx-linkbtn" href="/my/questions">
-                        Open all your conversations in full page →
-                      </a>
-                    </p>
-                    {myQuestions.map((q) => (
+                  <div className="wx-my-questions max-w-4xl mx-auto">
+                    {myQuestions.slice(0, 3).map((q) => (
                       <button type="button" key={q.id} className="wx-my-question" onClick={() => openThread(q)}>
                         <p className="wx-my-question-text">{q.questionText}</p>
                         <p className="wx-my-question-meta">
@@ -1419,6 +1774,9 @@ function QuestionSection({
                         </p>
                       </button>
                     ))}
+                    <a className="wx-linkbtn" href="/dashboard">
+                      Go to Dashboard →
+                    </a>
                   </div>
                 )}
               </>
@@ -1445,10 +1803,100 @@ function QuestionSection({
               onConfirm={confirmPayment}
               onCancel={() => setPendingPay(null)}
             />
+            <QuestionGatewayModal
+              open={gatewayOpen}
+              amountPaise={order?.amountPaise ?? totalPaise}
+              perItemPaise={pricePaise}
+              items={entryList.map((entry) => ({ label: entry.label, category: entry.category }))}
+              merchant={client?.astrologerName ?? ""}
+              paying={paying}
+              onPay={settleOrder}
+              onCancel={() => {
+                setGatewayOpen(false);
+                setOrder(null);
+              }}
+            />
           </>
         )}
       </div>
     </SectionShell>
+  );
+}
+
+function QuestionGatewayModal({
+  open,
+  amountPaise,
+  perItemPaise,
+  items,
+  perItemLabel = "question",
+  merchant,
+  paying,
+  onPay,
+  onCancel,
+}: {
+  open: boolean;
+  amountPaise: number;
+  perItemPaise: number;
+  items: { label: string; category: string }[];
+  perItemLabel?: string;
+  merchant: string;
+  paying: boolean;
+  onPay: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="wx-modal-backdrop" onClick={onCancel}>
+      <div
+        className="wx-modal wx-gateway"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Complete payment"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="wx-gateway-head">
+          <span className="wx-gateway-brand">razorpay</span>
+          <span className="wx-gateway-secure">100% Secure</span>
+        </div>
+        <h2 className="wx-modal-title">Complete Payment</h2>
+        {merchant ? <p className="wx-gateway-merchant">Paying {merchant}</p> : null}
+        <div className="wx-gateway-amount">
+          <span className="wx-gateway-amount-label">Amount Payable</span>
+          <span className="wx-gateway-amount-value">{formatPrice(amountPaise)}</span>
+          <span className="wx-gateway-amount-count">
+            {items.length} {perItemLabel}
+            {items.length === 1 ? "" : "s"} · {formatPrice(perItemPaise)} each
+          </span>
+        </div>
+        <ul className="wx-gateway-items">
+          {items.map((item, i) => (
+            <li key={`${item.category}-${i}`}>
+              <span className="wx-gateway-item-text">{item.label}</span>
+              <span className="wx-gateway-item-cat">{item.category}</span>
+            </li>
+          ))}
+        </ul>
+        <form
+          className="wx-auth-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onPay();
+          }}
+        >
+          <button
+            type="submit"
+            className="wx-btn wx-btn-primary wx-auth-submit wx-gateway-pay"
+            disabled={paying}
+          >
+            {paying ? "Processing payment…" : `Pay ${formatPrice(amountPaise)} Securely`}
+          </button>
+          <button type="button" className="wx-linkbtn" onClick={onCancel}>
+            Cancel
+          </button>
+        </form>
+        <p className="wx-q-trust">Private &amp; Confidential · Answers within 24–48 hours</p>
+      </div>
+    </div>
   );
 }
 

@@ -147,11 +147,18 @@ export function fetchOpenSlots(
   return request(`/astrologers/${encodeURIComponent(slug)}/slots?date=${date}`);
 }
 
+export interface BookingPaymentIntent {
+  id: string;
+  amountPaise: number;
+  currency: string;
+  status?: string;
+}
+
 export function createBooking(
   astrologerId: string,
   startAt: string,
   idempotencyKey: string,
-): Promise<{ booking: unknown }> {
+): Promise<{ booking: ClientBooking; payment: BookingPaymentIntent | null }> {
   return request("/bookings", {
     method: "POST",
     body: JSON.stringify({ astrologerId, startAt }),
@@ -167,6 +174,36 @@ export function askQuestion(
   return request("/questions", {
     method: "POST",
     body: JSON.stringify({ astrologerId, questionText, category }),
+  });
+}
+
+export interface QuestionOrderItem {
+  questionText: string;
+  category?: string;
+}
+
+export interface QuestionOrderClientDetails {
+  clientName: string;
+  birthDate: string;
+  birthTime: string;
+  birthPlace: string;
+}
+
+export interface QuestionOrderResult {
+  payment: QuestionPaymentIntent;
+  questions: ClientQuestion[];
+  count: number;
+}
+
+/** Order multiple questions in one go, covered by a single payment intent. */
+export function orderQuestions(
+  astrologerId: string,
+  items: QuestionOrderItem[],
+  clientDetails?: QuestionOrderClientDetails,
+): Promise<QuestionOrderResult> {
+  return request("/questions/batch", {
+    method: "POST",
+    body: JSON.stringify({ astrologerId, items, ...(clientDetails ? { clientDetails } : {}) }),
   });
 }
 
@@ -197,12 +234,14 @@ export interface ClientQuestion {
   createdAt: string;
   lastMessage?: ChatMessage | null;
   astrologer?: { id: string; user: { id: string; name: string } } | null;
+  clientDetails?: QuestionOrderClientDetails | null;
 }
 
 export interface QuestionPaymentIntent {
   id: string;
   amountPaise: number;
   currency: string;
+  clientDetails?: QuestionOrderClientDetails | null;
 }
 
 export type SendQuestionMessageResult =
@@ -245,6 +284,8 @@ export function completePayment(
   payment: CompletedPayment;
   message: ChatMessage | null;
   question: ClientQuestion | null;
+  questions?: ClientQuestion[] | null;
+  bookings?: ClientBooking[] | null;
 }> {
   return request(`/payments/${paymentId}/complete`, { method: "POST" });
 }

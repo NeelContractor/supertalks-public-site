@@ -589,11 +589,23 @@
 }
 
 .wx-approach-row svg,
+.wx-approach-row img,
 .wx-approach-row .wx-approach-mark {
   grid-column: 1;
+  align-self: start;
+}
+
+.wx-approach-row svg,
+.wx-approach-row .wx-approach-mark {
   width: 43px;
   height: 43px;
   fill: var(--site-maroon);
+}
+
+.wx-approach-row img {
+  width: 100px;
+  max-width: 100%;
+  height: auto;
 }
 
 .wx-approach-mark {
@@ -846,17 +858,54 @@
   line-height: 1.3;
 }
 
-.wx-book-days {
+.wx-book-week {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   margin-top: 40px;
   max-width: 100%;
 }
 
+.wx-book-week-nav {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--site-maroon);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--site-maroon);
+  font-family: var(--site-body);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: opacity 150ms ease, background 120ms ease, color 120ms ease;
+}
+
+.wx-book-week-nav:hover:not(:disabled) {
+  background: var(--site-maroon);
+  color: var(--site-white);
+}
+
+.wx-book-week-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.wx-book-days {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 760px;
+}
+
 .wx-book-days button {
-  padding: 10px 18px;
+  width: 100%;
+  padding: 10px 6px;
   border: 1px solid var(--site-maroon);
   border-radius: 6.75px;
   background: transparent;
@@ -864,6 +913,7 @@
   font-family: var(--site-body);
   font-size: 16px;
   line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
   transition: opacity 150ms ease, background 120ms ease, color 120ms ease;
 }
@@ -1004,6 +1054,109 @@
 
 .wx-question-form .wx-btn {
   margin-top: 8px;
+}
+
+/* ------ Razorpay-style question checkout (mock settlement) ------ */
+
+.wx-gateway {
+  max-width: 420px;
+  text-align: center;
+}
+
+.wx-gateway-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.wx-gateway-brand {
+  color: #3395ff;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.wx-gateway-secure {
+  color: #0fb281;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wx-gateway-merchant {
+  margin: 6px 0 0;
+  color: var(--site-maroon);
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.wx-gateway-amount {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 18px;
+  padding: 16px 0;
+  border-top: 1px solid rgba(128, 22, 54, 0.2);
+  border-bottom: 1px solid rgba(128, 22, 54, 0.2);
+}
+
+.wx-gateway-amount-label {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.wx-gateway-amount-value {
+  color: #3395ff;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.wx-gateway-amount-count {
+  font-size: 12.5px;
+  opacity: 0.75;
+}
+
+.wx-gateway-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow: auto;
+  margin: 16px 0 6px;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.wx-gateway-items li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(128, 22, 54, 0.18);
+  border-radius: 8px;
+  background: var(--site-white);
+  color: var(--site-maroon);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.wx-gateway-item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wx-gateway-item-cat {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.wx-gateway-pay {
+  margin-top: 10px;
 }
 
 /* ------ Question chat (client side) ------ */
@@ -1413,6 +1566,10 @@
   .wx-services {
     padding-right: 63px;
   }
+
+  .wx-approach-row img {
+    width: 80px;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1499,12 +1656,20 @@
     row-gap: 18px;
   }
 
+  .wx-service-row h3,
   .wx-faq-row h3,
   .wx-faq-row p,
   .wx-approach-row svg,
+  .wx-approach-row img,
+  .wx-approach-row .wx-approach-mark,
   .wx-approach-row h3,
   .wx-approach-row p {
     grid-column: auto;
+  }
+
+  .wx-approach-row img {
+    width: clamp(48px, 16vw, 72px);
+    max-width: 100%;
   }
 
   .wx-footer-inner {
@@ -1523,8 +1688,24 @@
     overflow-wrap: break-word;
   }
 
+  .wx-book-week {
+    gap: 8px;
+  }
+
+  .wx-book-week-nav {
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+  }
+
   .wx-book-days {
-    flex-wrap: wrap;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .wx-book-days button {
+    padding: 9px 4px;
+    font-size: 14px;
   }
 
   .wx-slot-grid {

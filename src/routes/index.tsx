@@ -106,7 +106,7 @@ function Index() {
             <a className="wx-header-dash" href="/dashboard">
               My Dashboard
             </a>
-            <button
+            {/* <button
               type="button"
               className="wx-menu-btn"
               onClick={() => setMenuOpen(true)}
@@ -115,7 +115,7 @@ function Index() {
               aria-label="Open navigation"
             >
               <MenuIcon />
-            </button>
+            </button> */}
           </div>
         </header>
 
