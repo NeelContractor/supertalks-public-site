@@ -13,6 +13,7 @@ import { AuthPanel } from "../lib/AuthPanel";
 import { PayConfirm } from "../lib/pay";
 import { connectQuestionSocket } from "../lib/ws";
 import { useStore } from "../lib/store";
+import { PaginationBar } from "../components/pagination-bar";
 
 export const Route = createFileRoute("/my/questions")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -26,6 +27,10 @@ export const Route = createFileRoute("/my/questions")({
 });
 
 const CLOSED_STATUSES = ["Rejected", "Refunded"];
+const PAGE_SIZE = 10;
+const OPEN_STATUSES = new Set(["PendingPayment", "Queued"]);
+
+type QuestionFilter = "all" | "open" | "answered" | "closed";
 
 function MyQuestions() {
   const auth = useAuth();
@@ -50,6 +55,26 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
   const loading = useStore((s) => s.questionsLoading && !s.questionsLoaded);
   const loadError = useStore((s) => s.questionsError);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<QuestionFilter>("all");
+
+  const filteredQuestions = questions.filter((q) =>
+    filter === "all"
+      ? true
+      : filter === "open"
+        ? OPEN_STATUSES.has(q.status)
+        : filter === "answered"
+          ? q.status === "Answered"
+          : CLOSED_STATUSES.includes(q.status)
+  );
+  const totalPages = Math.max(1, Math.ceil(filteredQuestions.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageQuestions = filteredQuestions.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const changeFilter = (next: QuestionFilter) => {
+    setFilter(next);
+    setPage(1);
+  };
   const messages = useStore((s) => (activeId ? s.messagesByQuestion[activeId] : undefined)) ?? [];
   const threadLoading = useStore((s) => (activeId ? !!s.threadsLoading[activeId] : false));
   const [reply, setReply] = useState("");
@@ -223,15 +248,50 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
           </div>
         ) : (
           <>
+            <div className="wx-question-tabs" role="tablist" aria-label="Filter questions">
+              <button
+                type="button"
+                className={filter === "all" ? "is-active" : ""}
+                onClick={() => changeFilter("all")}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className={filter === "open" ? "is-active" : ""}
+                onClick={() => changeFilter("open")}
+              >
+                Open
+              </button>
+              <button
+                type="button"
+                className={filter === "answered" ? "is-active" : ""}
+                onClick={() => changeFilter("answered")}
+              >
+                Answered
+              </button>
+              <button
+                type="button"
+                className={filter === "closed" ? "is-active" : ""}
+                onClick={() => changeFilter("closed")}
+              >
+                Closed
+              </button>
+            </div>
+
             {loading ? (
               <p className="wx-book-note">Loading your questions…</p>
             ) : loadError ? (
               <p className="wx-book-danger">{loadError}</p>
-            ) : questions.length === 0 ? (
-              <p className="wx-book-note">You haven't asked any questions yet.</p>
+            ) : filteredQuestions.length === 0 ? (
+              <p className="wx-book-note">
+                {questions.length === 0
+                  ? "You haven't asked any questions yet."
+                  : "No questions match this filter."}
+              </p>
             ) : (
               <div className="wx-my-questions">
-                {questions.map((q) => (
+                {pageQuestions.map((q) => (
                   <button type="button" key={q.id} className="wx-my-question" onClick={() => openThread(q)}>
                     <p className="wx-my-question-text">{q.questionText}</p>
                     <p className="wx-my-question-meta">
@@ -245,6 +305,7 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
                 ))}
               </div>
             )}
+            <PaginationBar page={safePage} totalPages={totalPages} onPageChange={setPage} />
           </>
         )}
 

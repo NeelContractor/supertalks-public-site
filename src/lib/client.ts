@@ -259,7 +259,7 @@ export function listMyQuestions(): Promise<{
   questions: ClientQuestion[];
   total: number;
 }> {
-  return request("/questions");
+  return request("/questions?limit=100");
 }
 
 export function fetchQuestionMessages(

@@ -492,7 +492,6 @@
 /* ------ Services ------ */
 
 .wx-services {
-  min-height: 776px;
   padding: 43px 0 80px 63px;
   background: var(--site-pink);
   box-sizing: border-box;
@@ -500,10 +499,18 @@
 
 .wx-services-grid {
   display: grid;
-  grid-template-columns: 36.38344227% 36.52868555% 22.51270879%;
+  grid-template-columns: repeat(3, 1fr);
   max-width: 1377px;
-  column-gap: 0;
-  row-gap: 0;
+  column-gap: 28px;
+  row-gap: 32px;
+}
+
+.wx-services-grid > div:first-child {
+  grid-column: 1 / -1;
+}
+
+.wx-services-grid > div[aria-hidden="true"] {
+  display: none;
 }
 
 .wx-services-grid h3,
@@ -524,11 +531,7 @@
 }
 
 .wx-services article {
-  padding-top: 92px;
-}
-
-.wx-services-grid article:nth-child(5) {
-  margin-top: 0;
+  padding-top: 0;
 }
 
 .wx-services-grid article > p {
@@ -541,15 +544,6 @@
 
 .wx-services article {
   max-width: 420px;
-}
-
-.wx-services article:nth-child(2) {
-  justify-self: start;
-  padding-left: 0;
-}
-
-.wx-services article:nth-child(3) {
-  justify-self: start;
 }
 
 /* ------ My Approach ------ */

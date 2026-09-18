@@ -9,6 +9,7 @@ import {
 import { useAuth, type UseAuth } from "../lib/useAuth";
 import { AuthPanel } from "../lib/AuthPanel";
 import { useStore } from "../lib/store";
+import { PaginationBar } from "../components/pagination-bar";
 
 export const Route = createFileRoute("/my/bookings")({
   head: () => ({
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/my/bookings")({
 });
 
 const CANCELLABLE = ["PendingPayment", "Confirmed", "Rescheduled"];
+const PAGE_SIZE = 10;
 
 const OPEN_STATUSES = new Set(["PendingPayment", "Confirmed", "Rescheduled"]);
 const CANCELLED_STATUSES = new Set(["CancelledByClient", "CancelledByAstrologer"]);
@@ -62,6 +64,7 @@ function BookingsHome({ auth }: { auth: UseAuth }) {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ ok: boolean; message: string } | null>(null);
   const [filter, setFilter] = useState<BookingFilter>("all");
+  const [page, setPage] = useState(1);
 
   const filteredBookings = bookings.filter((b) =>
     filter === "all"
@@ -70,6 +73,15 @@ function BookingsHome({ auth }: { auth: UseAuth }) {
         ? OPEN_STATUSES.has(b.status)
         : CANCELLED_STATUSES.has(b.status)
   );
+
+  const totalPages = Math.max(1, Math.ceil(filteredBookings.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageBookings = filteredBookings.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const changeFilter = (next: BookingFilter) => {
+    setFilter(next);
+    setPage(1);
+  };
 
   useEffect(() => {
     void useStore.getState().loadBookings();
@@ -123,21 +135,21 @@ function BookingsHome({ auth }: { auth: UseAuth }) {
               <button
                 type="button"
                 className={filter === "all" ? "is-active" : ""}
-                onClick={() => setFilter("all")}
+                onClick={() => changeFilter("all")}
               >
                 All
               </button>
               <button
                 type="button"
                 className={filter === "open" ? "is-active" : ""}
-                onClick={() => setFilter("open")}
+                onClick={() => changeFilter("open")}
               >
                 Open
               </button>
               <button
                 type="button"
                 className={filter === "cancelled" ? "is-active" : ""}
-                onClick={() => setFilter("cancelled")}
+                onClick={() => changeFilter("cancelled")}
               >
                 Cancelled
               </button>
@@ -150,7 +162,7 @@ function BookingsHome({ auth }: { auth: UseAuth }) {
               </p>
             ) : (
               <div className="wx-my-bookings">
-            {filteredBookings.map((b) => {
+            {pageBookings.map((b) => {
               const cancellable = CANCELLABLE.includes(b.status);
               const isMeetingRelevant = b.status === "Confirmed" || b.status === "Rescheduled";
               return (
@@ -205,6 +217,7 @@ function BookingsHome({ auth }: { auth: UseAuth }) {
             })}
               </div>
             )}
+              <PaginationBar page={safePage} totalPages={totalPages} onPageChange={setPage} />
           </>
         )}
 

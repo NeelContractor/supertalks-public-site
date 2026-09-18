@@ -18,9 +18,16 @@ import { AuthModal } from "./AuthModal";
 import { PayConfirm } from "./pay";
 import { useStore } from "./store";
 import anahataImg from "@/assets/icons/anahata.png"
-import lotusImg from "@/assets/icons/lotus.png"
-import shellImg from "@/assets/icons/shell.png"
+import lotusImg from "@/assets/icons/lotus-1.png"
+import shellImg from "@/assets/icons/shell-1.png"
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const DISPLAY_STACKS: Record<string, string> = {
   serif: '"eschaton", Georgia, serif',
@@ -200,6 +207,7 @@ interface EditableProps {
   onEditValue?: (field: string, value: string) => void;
   href?: string;
   title?: string;
+  locked?: boolean;
 }
 
 function Editable({
@@ -214,6 +222,7 @@ function Editable({
   onEditValue,
   href,
   title,
+  locked,
   ...rest
 }: EditableProps & Record<string, unknown>) {
   const elRef = useRef<HTMLElement | null>(null);
@@ -231,7 +240,7 @@ function Editable({
     if (el.textContent !== value) el.textContent = value;
   }, [value, field, edit]);
 
-  if (edit && !LOCKED_SECTIONS.has(section.id)) {
+  if (edit && !LOCKED_SECTIONS.has(section.id) && !locked) {
     return React.createElement(
       as,
       {
@@ -298,10 +307,10 @@ function StyleToolbar({
   const toolbar: React.CSSProperties = {
     position: "fixed",
     zIndex: 9999,
-    left: Math.max(8, Math.min(rect.left, window.innerWidth - 262 - 8)),
+    left: Math.max(8, Math.min(rect.left, window.innerWidth - 274 - 8)),
     top: above ? rect.top - toolbarH - gap : rect.bottom + gap,
-    width: 250,
-    background: "#1d2733",
+    width: 262,
+    background: "#2C2C2C",
     color: "#fff",
     borderRadius: 10,
     boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
@@ -374,22 +383,31 @@ function StyleToolbar({
       </p>
       <div style={row}>
         <span style={label}>Size</span>
-        <select
-          value={style.fontSize ?? ""}
-          style={{ ...inputBase, flex: "0 0 auto", width: 78 }}
-          onChange={(e) => onChange({ style: { ...style, fontSize: e.target.value } })}
+        <Select
+          value={style.fontSize || "default"}
+          onValueChange={(v) =>
+            onChange({ style: { ...style, fontSize: v === "default" ? "" : v } })
+          }
         >
-          <option value="">Default</option>
-          {SIZE_PRESETS.map((size) => (
-            <option key={size} value={size}>
-              {size}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            size="sm"
+            className="h-7 w-[76px] rounded-md border-[#334155] bg-[#0f1720] px-2 text-xs text-white"
+          >
+            <SelectValue placeholder="Default" />
+          </SelectTrigger>
+          <SelectContent className="z-[10001] border-[#334155] bg-[#242b36] text-gray-100 shadow-xl [&_[data-slot=select-item]]:focus:bg-[#3a4351] [&_[data-slot=select-item]]:focus:text-white [&_svg]:text-gray-400">
+            <SelectItem value="default">Default</SelectItem>
+            {SIZE_PRESETS.map((size) => (
+              <SelectItem key={size} value={size}>
+                {size}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <input
           type="text"
           value={style.fontSize ?? ""}
-          style={{ ...inputBase, width: 56, flex: "0 0 auto" }}
+          style={{ ...inputBase, flex: 1, minWidth: 44 }}
           onChange={(e) => onChange({ style: { ...style, fontSize: e.target.value } })}
           placeholder="e.g. 24px"
           title="Custom font size"
@@ -405,7 +423,7 @@ function StyleToolbar({
             padding: "4px 8px",
             fontSize: 11,
             cursor: "pointer",
-            marginLeft: "auto",
+            whiteSpace: "nowrap",
           }}
           title="Reset element styles to defaults"
         >
@@ -414,18 +432,27 @@ function StyleToolbar({
       </div>
       <div style={row}>
         <span style={label}>Font</span>
-        <select
-          value={style.fontFamily ?? ""}
-          style={inputBase}
-          onChange={(e) => onChange({ style: { ...style, fontFamily: e.target.value } })}
+        <Select
+          value={style.fontFamily || "default"}
+          onValueChange={(v) =>
+            onChange({ style: { ...style, fontFamily: v === "default" ? "" : v } })
+          }
         >
-          <option value="">Default</option>
-          {TOOLBAR_FONTS.map((font) => (
-            <option key={font} value={font}>
-              {font}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            size="sm"
+            className="h-7 flex-1 rounded-md border-[#334155] bg-[#0f1720] px-2 text-xs text-white"
+          >
+            <SelectValue placeholder="Default" />
+          </SelectTrigger>
+          <SelectContent className="z-[10001] border-[#334155] bg-[#242b36] text-gray-100 shadow-xl [&_[data-slot=select-item]]:focus:bg-[#3a4351] [&_[data-slot=select-item]]:focus:text-white [&_svg]:text-gray-400">
+            <SelectItem value="default">Default</SelectItem>
+            {TOOLBAR_FONTS.map((font) => (
+              <SelectItem key={font} value={font}>
+                {font}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div style={row}>
         <span style={label}>Color</span>
@@ -485,17 +512,26 @@ function StyleToolbar({
         >
           I
         </button>
-        <select
-          value={style.textTransform ?? ""}
-          onChange={(e) => onChange({ style: { ...style, textTransform: e.target.value } })}
-          style={{ ...inputBase, height: 28 }}
+        <Select
+          value={style.textTransform || "default"}
+          onValueChange={(v) =>
+            onChange({ style: { ...style, textTransform: v === "default" ? "" : v } })
+          }
         >
-          <option value="">Case: default</option>
-          <option value="none">none</option>
-          <option value="uppercase">UPPERCASE</option>
-          <option value="lowercase">lowercase</option>
-          <option value="capitalize">Title Case</option>
-        </select>
+          <SelectTrigger
+            size="sm"
+            className="h-7 flex-1 rounded-md border-[#334155] bg-[#0f1720] px-2 text-xs text-white"
+          >
+            <SelectValue placeholder="Case" />
+          </SelectTrigger>
+          <SelectContent className="z-[10001] border-[#334155] bg-[#242b36] text-gray-100 shadow-xl [&_[data-slot=select-item]]:focus:bg-[#3a4351] [&_[data-slot=select-item]]:focus:text-white [&_svg]:text-gray-400">
+            <SelectItem value="default">default</SelectItem>
+            <SelectItem value="none">none</SelectItem>
+            <SelectItem value="uppercase">UPPERCASE</SelectItem>
+            <SelectItem value="lowercase">lowercase</SelectItem>
+            <SelectItem value="capitalize">Title Case</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );
@@ -521,7 +557,7 @@ function CloseIcon() {
 
 function LeafIcon() {
   return (
-    <svg width="34" height="44" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <svg viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <path d="M20 1 C35 12 36 27 26 42 C32 32 34 18 20 1 Z" />
       <path d="M20 1 C10 12 4 26 10 38 C3 26 6 12 20 1 Z" />
     </svg>
@@ -530,7 +566,7 @@ function LeafIcon() {
 
 function BloomIcon() {
   return (
-    <svg width="44" height="34" viewBox="0 0 50 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <svg viewBox="0 0 50 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <ellipse cx="18" cy="20" rx="17" ry="14" />
       <ellipse cx="32" cy="20" rx="17" ry="14" />
     </svg>
@@ -539,22 +575,10 @@ function BloomIcon() {
 
 function TeardropIcon() {
   return (
-    <svg width="36" height="40" viewBox="0 0 40 44" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <svg viewBox="0 0 40 44" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <path d="M20 1 C31 16 38 26 38 31 C38 38 31 43 20 43 C9 43 2 38 2 31 C2 26 9 16 20 1 Z" />
     </svg>
   );
-}
-
-function ApproachIcon({ name }: { name: string }) {
-  switch (name) {
-    case "bloom":
-      return <BloomIcon />;
-    case "teardrop":
-      return <TeardropIcon />;
-    case "leaf":
-    default:
-      return <LeafIcon />;
-  }
 }
 
 export interface SiteClientInfo {
@@ -671,7 +695,7 @@ function HeroSection({
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
           <Editable as="p" className="wx-hero-sub" field="subtitle" section={section} edit={edit} value={p(props, "subtitle")} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
-          <Editable as="a" className="wx-btn wx-btn-primary" field="ctaLabel" section={section} edit={edit} value={p(props, "ctaLabel", "Get Started")} href="#question" onClick={scrollToQuestion} onSelectField={(f) => onSelectField?.(section.id, f)}
+          <Editable as="a" className="wx-btn wx-btn-primary" field="ctaLabel" section={section} edit={edit} value={p(props, "ctaLabel", "Get Started")} href="#question" onClick={scrollToQuestion} locked onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         </div>
 
@@ -855,19 +879,22 @@ function ApproachSection({
         <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "My Approach")} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
         <div className="wx-approach-list">
-          {items.map((item, i) => (
-            <div className="wx-approach-row" key={i}>
-              {item["icon"] ? (
-                <img src={[anahataImg, lotusImg, shellImg][i % 3]} alt="Image" width={100} height={100} />
-              ) : (
-                <span className="wx-approach-mark">{i + 1}</span>
-              )}
-              <Editable as="h3" field={`items.${i}.title`} section={section} edit={edit} value={p(item, "title")} onSelectField={(f) => onSelectField?.(section.id, f)}
+          {items.map((item, i) => {
+            return (
+              <div className="wx-approach-row" key={i}>
+                <img
+                  src={[anahataImg, lotusImg, shellImg][i % 3]}
+                  alt=""
+                  width={100}
+                  height={100}
+                />
+                <Editable as="h3" field={`items.${i}.title`} section={section} edit={edit} value={p(item, "title")} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
-              <Editable as="p" field={`items.${i}.body`} section={section} edit={edit} value={p(item, "body")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                <Editable as="p" field={`items.${i}.body`} section={section} edit={edit} value={p(item, "body")} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       </div>
     </SectionShell>
@@ -1296,6 +1323,15 @@ function QuestionSection({
 
   const selectCategory = (index: number) => setCategoryIndex(index);
 
+  useEffect(() => {
+    if (categoryIndex != null) {
+      const el = document.getElementById(`questions-${categoryIndex}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+  }, [categoryIndex]);
+
   const isQuestionPicked = (question: string, category: string) =>
     picked.some((q) => q.questionText === question && q.category === category);
 
@@ -1598,7 +1634,10 @@ function QuestionSection({
                           </div>
 
                           {activeTopic ? (
-                            <div className="border-t border-gray-200 pt-8">
+                            <div
+                              id={`questions-${categoryIndex}`}
+                              className="border-t border-gray-200 pt-8"
+                            >
                               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-5">
                                 <div>
                                   <h4 className="text-xl md:text-2xl font-bold text-gray-900">{activeTopic.title}</h4>
@@ -2068,8 +2107,8 @@ const selectField = (sectionId: string, field: string) => {
   // Human-friendly labels for otherwise cryptic template field keys.
 const FIELD_LABELS: Record<string, string> = {
   siteName: "Site Name",
-  ctaLabel: "Button Text",
-  buttonLabel: "Button Text",
+  // ctaLabel: "Button Text",
+  // buttonLabel: "Button Text",
   eyebrow: "Eyebrow",
   quote: "Quote",
   heading: "Heading",

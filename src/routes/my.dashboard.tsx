@@ -44,7 +44,7 @@ function DashboardHome({ auth }: { auth: UseAuth }) {
     void useStore.getState().loadQuestions();
   }, []);
 
-  const upcoming = bookings.filter((b) => ACTIVE_STATUSES.includes(b.status));
+  const upcoming = bookings.filter((b) => ACTIVE_STATUSES.includes(b.status)).slice(0, 5);
   const recentQuestions = questions.slice(0, 5);
 
   return (
