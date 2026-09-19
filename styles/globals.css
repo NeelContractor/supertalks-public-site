@@ -211,6 +211,13 @@
   pointer-events: auto;
 }
 
+.wx-header .wx-header-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 .wx-site-name {
   display: block;
   font-family: var(--site-display);
@@ -760,8 +767,11 @@
 }
 
 .wx-footer .wx-footer-logo {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 16px;
   align-self: start;
+  min-width: 0;
 }
 
 .wx-footer .wx-footer-logo img {

@@ -667,13 +667,10 @@ function HeroSection({
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-hero">
         <header className="wx-header">
-          <a href="#top" aria-label="Home">
-            {logo ? (
-              <img src={logo} alt="supertalks" />
-            ) : (
-              <Editable as="span" className="wx-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
+          <a className="wx-header-brand" href="#top" aria-label="Home">
+            {logo ? <img src={logo} alt="supertalks" /> : null}
+            <Editable as="span" className="wx-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
-            )}
           </a>
           {/* <button
             type="button"
@@ -1962,8 +1959,9 @@ function FooterSection({
       <footer className="wx-footer">
         <div className="wx-footer-inner">
           <a className="wx-footer-logo" href="#top" aria-label={`${siteName} home`}>
-            {logo ? <img src={logo} alt="supertalks" /> : <Editable as="span" className="wx-footer-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
-                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />}
+            {logo ? <img src={logo} alt="supertalks" /> : null}
+            <Editable as="span" className="wx-footer-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
           </a>
           <div className="wx-footer-col">
             <Editable as="a" field="phone" section={section} edit={edit} value={p(props, "phone")} href={`tel:${p(props, "phone")}`} onSelectField={(f) => onSelectField?.(section.id, f)}
