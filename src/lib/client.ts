@@ -253,6 +253,41 @@ export interface CompletedPayment {
   amountPaise: number;
   currency: string;
   status: string;
+  provider?: string;
+  purpose?: string;
+}
+
+export interface PaymentOutcome {
+  payment: CompletedPayment;
+  message: ChatMessage | null;
+  question: ClientQuestion | null;
+  questions?: ClientQuestion[] | null;
+  bookings?: ClientBooking[] | null;
+}
+
+export interface InitiatePaymentResult extends PaymentOutcome {
+  mode: "mock" | "gateway";
+  redirectUrl: string | null;
+}
+
+/**
+ * Ask the backend to open a checkout for a payment intent. With PhonePe
+ * configured this returns a gateway redirectUrl; without it the old mock
+ * complete flow is used (mode: "mock").
+ */
+export function initiatePayment(
+  paymentId: string,
+  returnTo: string,
+): Promise<InitiatePaymentResult> {
+  return request(`/payments/${paymentId}/initiate`, {
+    method: "POST",
+    body: JSON.stringify({ returnTo }),
+  });
+}
+
+/** Read the current outcome of a payment (used to poll after returning from the gateway). */
+export function getPayment(paymentId: string): Promise<PaymentOutcome> {
+  return request(`/payments/${paymentId}`);
 }
 
 export function listMyQuestions(): Promise<{
@@ -280,13 +315,7 @@ export function sendQuestionMessage(
 
 export function completePayment(
   paymentId: string,
-): Promise<{
-  payment: CompletedPayment;
-  message: ChatMessage | null;
-  question: ClientQuestion | null;
-  questions?: ClientQuestion[] | null;
-  bookings?: ClientBooking[] | null;
-}> {
+): Promise<PaymentOutcome> {
   return request(`/payments/${paymentId}/complete`, { method: "POST" });
 }
 

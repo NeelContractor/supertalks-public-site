@@ -1,13 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FieldStyle, SiteDocument, SiteSectionDoc } from "../types";
 import {
-  completePayment,
   createBooking,
   fetchOpenSlots,
   formatPrice,
   orderQuestions,
   sendQuestionMessage,
-  type BookingPaymentIntent,
   type ClientQuestion,
   type OpenSlot,
   type QuestionOrderClientDetails,
@@ -15,7 +13,7 @@ import {
 } from "./client";
 import { useAuth, type UseAuth } from "./useAuth";
 import { AuthModal } from "./AuthModal";
-import { PayConfirm } from "./pay";
+import { runCheckout, useGatewayReturn } from "./pay";
 import { useStore } from "./store";
 import anahataImg from "@/assets/icons/anahata.png"
 import lotusImg from "@/assets/icons/lotus-1.png"
@@ -1004,14 +1002,30 @@ function BookingSection({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [paying, setPaying] = useState(false);
-  const [order, setOrder] = useState<BookingPaymentIntent | null>(null);
-  const [gatewayOpen, setGatewayOpen] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
   const pendingRef = useRef<string | null>(null);
   const bookRef = useRef<((startAt: string) => Promise<void>) | null>(null);
+
+  // Back from the payment gateway: confirm the booking once payment lands.
+  useGatewayReturn((_outcome, _paymentId, status) => {
+    const ok = status === "success";
+    setStatus({
+      ok,
+      message:
+        status === "success"
+          ? "Payment successful! Your session is confirmed."
+          : status === "failed"
+            ? "Payment failed. You can try again."
+            : status === "pending"
+              ? "Payment is being processed. We'll confirm your session shortly."
+              : "Payment could not be completed.",
+    });
+    if (ok) {
+      void useStore.getState().loadBookings(true);
+      setRefreshNonce((n) => n + 1);
+    }
+  });
 
   const days = upcomingDays(28);
   const weekSize = 7;
@@ -1058,10 +1072,13 @@ function BookingSection({
     setStatus(null);
     try {
       const { payment } = await createBooking(client.astrologerId, startAt, crypto.randomUUID());
-      setSelectedSlot(startAt);
       if (payment) {
-        setOrder(payment);
-        setGatewayOpen(true);
+        setStatus({ ok: true, message: "Redirecting to secure payment…" });
+        const outcome = await runCheckout(payment, window.location.href);
+        if (outcome === "redirect") return;
+        setStatus({ ok: true, message: "Payment successful! Your session is confirmed." });
+        void useStore.getState().loadBookings(true);
+        setRefreshNonce((n) => n + 1);
       } else {
         setStatus({ ok: true, message: "Session booked and confirmed." });
         void useStore.getState().loadBookings(true);
@@ -1076,27 +1093,6 @@ function BookingSection({
     }
   };
   bookRef.current = book;
-
-  const settleOrder = async () => {
-    if (!order) return;
-    setPaying(true);
-    setStatus(null);
-    try {
-      await completePayment(order.id);
-      setGatewayOpen(false);
-      setOrder(null);
-      setStatus({ ok: true, message: "Payment successful! Your session is confirmed." });
-      void useStore.getState().loadBookings(true);
-      setRefreshNonce((n) => n + 1);
-    } catch (err) {
-      setStatus({
-        ok: false,
-        message: err instanceof Error ? err.message : "Payment failed. Please try again.",
-      });
-    } finally {
-      setPaying(false);
-    }
-  };
 
   useEffect(() => {
     const startAt = pendingRef.current;
@@ -1212,35 +1208,6 @@ function BookingSection({
                 "Sign in (or create a free account) to book a slot."
               )}
             </p>
-            <QuestionGatewayModal
-              open={gatewayOpen}
-              amountPaise={order?.amountPaise ?? client?.callPricePerSlotPaise ?? 0}
-              perItemPaise={order?.amountPaise ?? client?.callPricePerSlotPaise ?? 0}
-              perItemLabel="session"
-              items={
-                selectedSlot
-                  ? [
-                      {
-                        label: "1-on-1 consultation call",
-                        category: new Date(selectedSlot).toLocaleString(undefined, {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        }),
-                      },
-                    ]
-                  : []
-              }
-              merchant={client?.astrologerName ?? ""}
-              paying={paying}
-              onPay={settleOrder}
-              onCancel={() => {
-                setGatewayOpen(false);
-                setOrder(null);
-              }}
-            />
           </>
         )}
       </div>
@@ -1288,8 +1255,24 @@ function QuestionSection({
   const threadLoading = useStore((s) => (activeId ? !!s.threadsLoading[activeId] : false));
   const [reply, setReply] = useState("");
   const [replySending, setReplySending] = useState(false);
-  const [pendingPay, setPendingPay] = useState<{ paymentId: string; amountPaise: number } | null>(null);
-  const [paying, setPaying] = useState(false);
+
+  // Back from the payment gateway: finish the order once the payment lands.
+  useGatewayReturn((_outcome, _paymentId, status) => {
+    setReplySending(false);
+    const ok = status === "success";
+    setStatus({
+      ok,
+      message:
+        status === "success"
+          ? "Payment successful! Your questions have been sent."
+          : status === "failed"
+            ? "Payment failed. Please try again."
+            : status === "pending"
+              ? "Payment is being processed. Your questions will be sent shortly."
+              : "Payment could not be completed.",
+    });
+    if (ok) void useStore.getState().loadQuestions(true);
+  });
 
   // ---- Category & question selection (pick questions across all topics) ----
   const topics = itemsOf(props, "topics")
@@ -1305,8 +1288,6 @@ function QuestionSection({
 
   const [categoryIndex, setCategoryIndex] = useState<number | null>(null);
   const [picked, setPicked] = useState<QuestionOrderItem[]>([]);
-  const [order, setOrder] = useState<{ id: string; amountPaise: number; currency: string } | null>(null);
-  const [gatewayOpen, setGatewayOpen] = useState(false);
   const [clientDetails, setClientDetails] = useState<QuestionOrderClientDetails>({
     clientName: "",
     birthDate: "",
@@ -1359,8 +1340,18 @@ function QuestionSection({
     setStatus(null);
     try {
       const result = await orderQuestions(client.astrologerId, items, details);
-      setOrder(result.payment);
-      setGatewayOpen(true);
+      setStatus({ ok: true, message: "Redirecting to secure payment…" });
+      const outcome = await runCheckout(result.payment, window.location.href);
+      if (outcome === "redirect") return;
+      setCategoryIndex(null);
+      setPicked([]);
+      setStatus({
+        ok: true,
+        message:
+          "Payment successful! Your questions have been sent and you'll get personal answers in your question chat.",
+      });
+      setTab("mine");
+      void useStore.getState().loadQuestions(true);
     } catch (err) {
       setStatus({
         ok: false,
@@ -1409,33 +1400,6 @@ function QuestionSection({
     void createOrder(items, cleanDetails);
   };
 
-  const settleOrder = async () => {
-    if (!order) return;
-    setPaying(true);
-    setStatus(null);
-    try {
-      await completePayment(order.id);
-      setGatewayOpen(false);
-      setOrder(null);
-      setCategoryIndex(null);
-      setPicked([]);
-      setStatus({
-        ok: true,
-        message:
-          "Payment successful! Your questions have been sent and you'll get personal answers in your question chat.",
-      });
-      setTab("mine");
-      void useStore.getState().loadQuestions(true);
-    } catch (err) {
-      setStatus({
-        ok: false,
-        message: err instanceof Error ? err.message : "Payment could not be completed.",
-      });
-    } finally {
-      setPaying(false);
-    }
-  };
-
   const openThread = (q: ClientQuestion) => {
     setActiveId(q.id);
     setReply("");
@@ -1454,8 +1418,16 @@ function QuestionSection({
     try {
       const result = await sendQuestionMessage(activeId, reply.trim());
       if (result.requiresPayment) {
-        // Hold the message behind a payment prompt; the text stays in the input.
-        setPendingPay({ paymentId: result.payment.id, amountPaise: result.payment.amountPaise });
+        setStatus({ ok: true, message: "Redirecting to secure payment…" });
+        const outcome = await runCheckout(result.payment, window.location.href);
+        if (outcome === "redirect") return;
+        if (outcome.message) useStore.getState().appendMessage(activeId, outcome.message);
+        if (outcome.question) {
+          useStore.getState().updateQuestionStatus(outcome.question.id, outcome.question.status);
+        }
+        setReply("");
+        setStatus({ ok: true, message: "Payment successful! Your question has been sent." });
+        void useStore.getState().loadQuestions(true);
         return;
       }
       useStore.getState().appendMessage(activeId, result.message);
@@ -1466,25 +1438,6 @@ function QuestionSection({
       setStatus({ ok: false, message: err instanceof Error ? err.message : "Could not send your reply." });
     } finally {
       setReplySending(false);
-    }
-  };
-
-  const confirmPayment = async () => {
-    if (!pendingPay || !activeId) return;
-    setPaying(true);
-    try {
-      const result = await completePayment(pendingPay.paymentId);
-      setPendingPay(null);
-      if (result.message) useStore.getState().appendMessage(activeId, result.message);
-      if (result.question) {
-        useStore.getState().updateQuestionStatus(result.question.id, result.question.status);
-      }
-      setReply("");
-      void useStore.getState().loadQuestions(true);
-    } catch (err) {
-      setStatus({ ok: false, message: err instanceof Error ? err.message : "Payment could not be completed." });
-    } finally {
-      setPaying(false);
     }
   };
 
@@ -1832,107 +1785,10 @@ function QuestionSection({
                 "Sign in (or create a free account) to send your question."
               )}
             </p>
-            <PayConfirm
-              open={pendingPay !== null}
-              amountPaise={pendingPay?.amountPaise ?? 0}
-              paying={paying}
-              onConfirm={confirmPayment}
-              onCancel={() => setPendingPay(null)}
-            />
-            <QuestionGatewayModal
-              open={gatewayOpen}
-              amountPaise={order?.amountPaise ?? totalPaise}
-              perItemPaise={pricePaise}
-              items={entryList.map((entry) => ({ label: entry.label, category: entry.category }))}
-              merchant={client?.astrologerName ?? ""}
-              paying={paying}
-              onPay={settleOrder}
-              onCancel={() => {
-                setGatewayOpen(false);
-                setOrder(null);
-              }}
-            />
           </>
         )}
       </div>
     </SectionShell>
-  );
-}
-
-function QuestionGatewayModal({
-  open,
-  amountPaise,
-  perItemPaise,
-  items,
-  perItemLabel = "question",
-  merchant,
-  paying,
-  onPay,
-  onCancel,
-}: {
-  open: boolean;
-  amountPaise: number;
-  perItemPaise: number;
-  items: { label: string; category: string }[];
-  perItemLabel?: string;
-  merchant: string;
-  paying: boolean;
-  onPay: () => void;
-  onCancel: () => void;
-}) {
-  if (!open) return null;
-  return (
-    <div className="wx-modal-backdrop" onClick={onCancel}>
-      <div
-        className="wx-modal wx-gateway"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Complete payment"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="wx-gateway-head">
-          <span className="wx-gateway-brand">razorpay</span>
-          <span className="wx-gateway-secure">100% Secure</span>
-        </div>
-        <h2 className="wx-modal-title">Complete Payment</h2>
-        {merchant ? <p className="wx-gateway-merchant">Paying {merchant}</p> : null}
-        <div className="wx-gateway-amount">
-          <span className="wx-gateway-amount-label">Amount Payable</span>
-          <span className="wx-gateway-amount-value">{formatPrice(amountPaise)}</span>
-          <span className="wx-gateway-amount-count">
-            {items.length} {perItemLabel}
-            {items.length === 1 ? "" : "s"} · {formatPrice(perItemPaise)} each
-          </span>
-        </div>
-        <ul className="wx-gateway-items">
-          {items.map((item, i) => (
-            <li key={`${item.category}-${i}`}>
-              <span className="wx-gateway-item-text">{item.label}</span>
-              <span className="wx-gateway-item-cat">{item.category}</span>
-            </li>
-          ))}
-        </ul>
-        <form
-          className="wx-auth-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onPay();
-          }}
-        >
-          <button
-            type="submit"
-            className="wx-btn wx-btn-primary wx-auth-submit wx-gateway-pay"
-            disabled={paying}
-          >
-            {paying ? "Processing payment…" : `Pay ${formatPrice(amountPaise)} Securely`}
-          </button>
-          <button type="button" className="wx-linkbtn" onClick={onCancel}>
-            Cancel
-          </button>
-        </form>
-        <p className="wx-q-trust">Private &amp; Confidential · Answers within 24–48 hours</p>
-      </div>
-    </div>
   );
 }
 

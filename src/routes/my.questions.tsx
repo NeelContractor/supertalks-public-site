@@ -3,14 +3,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useNavigate } from "@tanstack/react-router";
 import { Breadcrumbs } from "../lib/breadcrumbs";
 import {
-  completePayment,
   formatPrice,
   sendQuestionMessage,
   type ClientQuestion,
 } from "../lib/client";
 import { useAuth, type UseAuth } from "../lib/useAuth";
 import { AuthPanel } from "../lib/AuthPanel";
-import { PayConfirm } from "../lib/pay";
+import { runCheckout, useGatewayReturn } from "../lib/pay";
 import { connectQuestionSocket } from "../lib/ws";
 import { useStore } from "../lib/store";
 import { PaginationBar } from "../components/pagination-bar";
@@ -80,9 +79,25 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [banner, setBanner] = useState<{ ok: boolean; message: string } | null>(null);
-  const [pendingPay, setPendingPay] = useState<{ paymentId: string; amountPaise: number } | null>(null);
-  const [paying, setPaying] = useState(false);
   const replyRef = useRef<HTMLInputElement>(null);
+
+  // Back from the payment gateway: finish the check-out when the payment lands.
+  useGatewayReturn((_outcome, _paymentId, status) => {
+    setReply("");
+    const ok = status === "success";
+    setBanner({
+      ok,
+      message:
+        status === "success"
+          ? "Payment successful!"
+          : status === "failed"
+            ? "Payment failed. You can try again if you'd like."
+            : status === "pending"
+              ? "Payment is being processed. We'll confirm shortly."
+              : "Payment could not be completed.",
+    });
+    if (ok) void useStore.getState().loadQuestions(true);
+  });
 
   useEffect(() => {
     void useStore.getState().loadQuestions();
@@ -132,7 +147,16 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
     try {
       const result = await sendQuestionMessage(active.id, reply.trim());
       if (result.requiresPayment) {
-        setPendingPay({ paymentId: result.payment.id, amountPaise: result.payment.amountPaise });
+        setBanner({ ok: true, message: "Redirecting to secure payment…" });
+        const outcome = await runCheckout(result.payment, window.location.href);
+        if (outcome === "redirect") return;
+        if (outcome.message) useStore.getState().appendMessage(active.id, outcome.message);
+        if (outcome.question) {
+          useStore.getState().updateQuestionStatus(outcome.question.id, outcome.question.status);
+        }
+        setReply("");
+        setBanner({ ok: true, message: "Payment successful! Your message has been sent." });
+        replyRef.current?.focus();
         return;
       }
       useStore.getState().appendMessage(active.id, result.message);
@@ -142,25 +166,6 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
       setBanner({ ok: false, message: err instanceof Error ? err.message : "Could not send your message." });
     } finally {
       setSending(false);
-    }
-  };
-
-  const confirmPayment = async () => {
-    if (!pendingPay || !active) return;
-    setPaying(true);
-    try {
-      const result = await completePayment(pendingPay.paymentId);
-      setPendingPay(null);
-      if (result.message) useStore.getState().appendMessage(active.id, result.message);
-      if (result.question) {
-        useStore.getState().updateQuestionStatus(result.question.id, result.question.status);
-      }
-      setReply("");
-      replyRef.current?.focus();
-    } catch (err) {
-      setBanner({ ok: false, message: err instanceof Error ? err.message : "Payment could not be completed." });
-    } finally {
-      setPaying(false);
     }
   };
 
@@ -312,14 +317,6 @@ function QuestionsHome({ auth }: { auth: UseAuth }) {
         {banner ? (
           <p className={banner.ok ? "wx-book-ok" : "wx-book-danger"}>{banner.message}</p>
         ) : null}
-
-        <PayConfirm
-          open={pendingPay !== null}
-          amountPaise={pendingPay?.amountPaise ?? 0}
-          paying={paying}
-          onConfirm={confirmPayment}
-          onCancel={() => setPendingPay(null)}
-        />
       </div>
     </main>
   );
