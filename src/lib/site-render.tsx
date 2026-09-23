@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FieldStyle, SiteDocument, SiteSectionDoc } from "../types";
+import { getCloudinaryUrl } from "./cloudinary";
 import {
   createBooking,
   fetchOpenSlots,
@@ -14,6 +15,7 @@ import {
 import { useAuth, type UseAuth } from "./useAuth";
 import { AuthModal } from "./AuthModal";
 import { runCheckout, useGatewayReturn } from "./pay";
+import { toast } from "sonner";
 import { useStore } from "./store";
 import anahataImg from "@/assets/icons/anahata.png"
 import lotusImg from "@/assets/icons/lotus-1.png"
@@ -40,6 +42,27 @@ const BODY_STACKS: Record<string, string> = {
 // Sections whose content is required for bookings/questions and must stay
 // fixed for the astrologer (not editable in the builder preview).
 const LOCKED_SECTIONS = new Set(["book", "question"]);
+
+const env =
+  typeof process !== "undefined" && typeof process.env === "object" ? process.env : {};
+const SUPERTALKS_URL = env.BUN_PUBLIC_SUPERTALKS_URL ?? "http://fake_supertalks.com";
+
+/** Shared toast id so loading → success/error replaces the same notification. */
+const PAY_TOAST_ID = "supertalks-pay";
+
+/** Render the whole copyright line as a single link to the SuperTalks site. */
+function linkifySuperTalks(text: string, url: string): React.ReactNode {
+  return (
+    <a
+      className="is-underline"
+      href={url}
+      target="_blank"
+      rel="noreferrer noopener"
+    >
+      {text}
+    </a>
+  );
+}
 
 function str(value: unknown, fallback: string): string {
   return typeof value === "string" && value !== "" ? value : fallback;
@@ -659,14 +682,14 @@ function HeroSection({
   const [menuOpen, setMenuOpen] = useState(false);
   const props = propsOf(section);
   const siteName = p(props, "siteName", "My Site");
-  const logo = p(props, "logo");
+  const logo = getCloudinaryUrl(p(props, "logo"));
 
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-hero">
         <header className="wx-header">
           <a className="wx-header-brand" href="#top" aria-label="Home">
-            {logo ? <img src={logo} alt="supertalks" /> : null}
+            {logo ? <img className="wx-header-logo" src={logo} alt={siteName} /> : null}
             <Editable as="span" className="wx-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
           </a>
@@ -1022,8 +1045,15 @@ function BookingSection({
               : "Payment could not be completed.",
     });
     if (ok) {
+      toast.success("Payment successful! Your session is confirmed.", { id: PAY_TOAST_ID });
       void useStore.getState().loadBookings(true);
       setRefreshNonce((n) => n + 1);
+    } else if (status === "failed") {
+      toast.error("Payment failed. You can try again.", { id: PAY_TOAST_ID });
+    } else if (status === "pending") {
+      toast("Payment is being processed. We'll confirm your session shortly.", { id: PAY_TOAST_ID });
+    } else {
+      toast.error("Payment could not be completed.", { id: PAY_TOAST_ID });
     }
   });
 
@@ -1070,24 +1100,28 @@ function BookingSection({
     if (!client?.astrologerId) return;
     setSubmitting(true);
     setStatus(null);
+    toast.loading("Checking availability and starting your booking…", { id: PAY_TOAST_ID });
     try {
       const { payment } = await createBooking(client.astrologerId, startAt, crypto.randomUUID());
       if (payment) {
         setStatus({ ok: true, message: "Redirecting to secure payment…" });
+        toast.loading("Redirecting to secure payment…", { id: PAY_TOAST_ID });
         const outcome = await runCheckout(payment, window.location.href);
         if (outcome === "redirect") return;
         setStatus({ ok: true, message: "Payment successful! Your session is confirmed." });
+        toast.success("Payment successful! Your session is confirmed.", { id: PAY_TOAST_ID });
         void useStore.getState().loadBookings(true);
         setRefreshNonce((n) => n + 1);
       } else {
         setStatus({ ok: true, message: "Session booked and confirmed." });
+        toast.success("Session booked and confirmed.", { id: PAY_TOAST_ID });
         void useStore.getState().loadBookings(true);
       }
     } catch (err) {
-      setStatus({
-        ok: false,
-        message: err instanceof Error ? err.message : "Booking failed. Please try again.",
-      });
+      const message =
+        err instanceof Error ? err.message : "Booking failed. Please try again.";
+      setStatus({ ok: false, message });
+      toast.error(message, { id: PAY_TOAST_ID });
     } finally {
       setSubmitting(false);
     }
@@ -1260,18 +1294,25 @@ function QuestionSection({
   useGatewayReturn((_outcome, _paymentId, status) => {
     setReplySending(false);
     const ok = status === "success";
-    setStatus({
-      ok,
-      message:
-        status === "success"
-          ? "Payment successful! Your questions have been sent."
-          : status === "failed"
-            ? "Payment failed. Please try again."
-            : status === "pending"
-              ? "Payment is being processed. Your questions will be sent shortly."
-              : "Payment could not be completed.",
-    });
-    if (ok) void useStore.getState().loadQuestions(true);
+    const message =
+      status === "success"
+        ? "Payment successful! Your questions have been sent."
+        : status === "failed"
+          ? "Payment failed. Please try again."
+          : status === "pending"
+            ? "Payment is being processed. Your questions will be sent shortly."
+            : "Payment could not be completed.";
+    setStatus({ ok, message });
+    if (ok) {
+      toast.success(message, { id: PAY_TOAST_ID });
+      void useStore.getState().loadQuestions(true);
+    } else if (status === "failed") {
+      toast.error(message, { id: PAY_TOAST_ID });
+    } else if (status === "pending") {
+      toast(message, { id: PAY_TOAST_ID });
+    } else {
+      toast.error(message, { id: PAY_TOAST_ID });
+    }
   });
 
   // ---- Category & question selection (pick questions across all topics) ----
@@ -1338,25 +1379,26 @@ function QuestionSection({
     if (!client?.astrologerId) return;
     setSubmitting(true);
     setStatus(null);
+    toast.loading("Checking your order and starting payment…", { id: PAY_TOAST_ID });
     try {
       const result = await orderQuestions(client.astrologerId, items, details);
       setStatus({ ok: true, message: "Redirecting to secure payment…" });
+      toast.loading("Redirecting to secure payment…", { id: PAY_TOAST_ID });
       const outcome = await runCheckout(result.payment, window.location.href);
       if (outcome === "redirect") return;
       setCategoryIndex(null);
       setPicked([]);
-      setStatus({
-        ok: true,
-        message:
-          "Payment successful! Your questions have been sent and you'll get personal answers in your question chat.",
-      });
+      const successMsg =
+        "Payment successful! Your questions have been sent and you'll get personal answers in your question chat.";
+      setStatus({ ok: true, message: successMsg });
+      toast.success(successMsg, { id: PAY_TOAST_ID });
       setTab("mine");
       void useStore.getState().loadQuestions(true);
     } catch (err) {
-      setStatus({
-        ok: false,
-        message: err instanceof Error ? err.message : "Could not create your order. Please try again.",
-      });
+      const message =
+        err instanceof Error ? err.message : "Could not create your order. Please try again.";
+      setStatus({ ok: false, message });
+      toast.error(message, { id: PAY_TOAST_ID });
     } finally {
       setSubmitting(false);
     }
@@ -1419,6 +1461,7 @@ function QuestionSection({
       const result = await sendQuestionMessage(activeId, reply.trim());
       if (result.requiresPayment) {
         setStatus({ ok: true, message: "Redirecting to secure payment…" });
+        toast.loading("Redirecting to secure payment…", { id: PAY_TOAST_ID });
         const outcome = await runCheckout(result.payment, window.location.href);
         if (outcome === "redirect") return;
         if (outcome.message) useStore.getState().appendMessage(activeId, outcome.message);
@@ -1427,6 +1470,7 @@ function QuestionSection({
         }
         setReply("");
         setStatus({ ok: true, message: "Payment successful! Your question has been sent." });
+        toast.success("Payment successful! Your question has been sent.", { id: PAY_TOAST_ID });
         void useStore.getState().loadQuestions(true);
         return;
       }
@@ -1435,7 +1479,10 @@ function QuestionSection({
       setReply("");
       void useStore.getState().loadQuestions(true);
     } catch (err) {
-      setStatus({ ok: false, message: err instanceof Error ? err.message : "Could not send your reply." });
+      const message =
+        err instanceof Error ? err.message : "Could not send your reply.";
+      setStatus({ ok: false, message });
+      toast.error(message, { id: PAY_TOAST_ID });
     } finally {
       setReplySending(false);
     }
@@ -1809,13 +1856,14 @@ function FooterSection({
 }) {
   const props = propsOf(section);
   const siteName = p(props, "siteName", "My Site");
-  const logo = p(props, "logo");
+  const logo = getCloudinaryUrl(p(props, "logo"));
+  const copyrightText = p(props, "copyright", `© ${new Date().getFullYear()} by ${siteName}`);
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <footer className="wx-footer">
         <div className="wx-footer-inner">
           <a className="wx-footer-logo" href="#top" aria-label={`${siteName} home`}>
-            {logo ? <img src={logo} alt="supertalks" /> : null}
+            {logo ? <img className="wx-footer-logo-img" src={logo} alt={siteName} /> : null}
             <Editable as="span" className="wx-footer-site-name" field="siteName" section={section} edit={edit} value={siteName} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
           </a>
@@ -1840,9 +1888,15 @@ function FooterSection({
           <div className="wx-footer-col">
             <a href="#privacy">Privacy Policy</a>
             <a href="#accessibility">Accessibility Statement</a>
-            <Editable as="p" className="wx-copyright" field="copyright" section={section} edit={edit} value={p(props, "copyright", `© ${new Date().getFullYear()} by ${siteName}`)} onSelectField={(f) => onSelectField?.(section.id, f)}
-                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
           </div>
+        </div>
+        <div className="wx-footer-bottom">
+          {edit ? (
+            <Editable as="p" className="wx-copyright" field="copyright" section={section} edit={edit} value={copyrightText} onSelectField={(f) => onSelectField?.(section.id, f)}
+                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+          ) : (
+            <p className="wx-copyright">{linkifySuperTalks(copyrightText, SUPERTALKS_URL)}</p>
+          )}
         </div>
       </footer>
     </SectionShell>

@@ -206,6 +206,17 @@
   width: auto;
 }
 
+.wx-header .wx-header-brand .wx-header-logo {
+  display: block;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: center;
+  align-self: center;
+}
+
 .wx-header a,
 .wx-header button {
   pointer-events: auto;
@@ -751,7 +762,6 @@
 /* ------ Footer ------ */
 
 .wx-footer {
-  min-height: 421px;
   background: var(--site-maroon);
   color: var(--site-white);
 }
@@ -774,14 +784,14 @@
   min-width: 0;
 }
 
-.wx-footer .wx-footer-logo img {
+.wx-footer .wx-footer-logo .wx-footer-logo-img {
   display: block;
-  /* height: 16px; */
-  /* width: auto; */
-  width: 235px; 
-  height: 68px; 
-  object-fit: contain; 
-  object-position: center center;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: center;
 }
 
 .wx-footer a {
@@ -825,9 +835,45 @@
   margin-top: 23px;
 }
 
-.wx-footer .wx-footer-col:last-child .wx-copyright {
-  margin-top: 88px;
-  text-align: right;
+.wx-footer-bottom {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 20px 24px 24px;
+}
+
+.wx-footer .wx-footer-bottom .wx-copyright {
+  margin: 0;
+  text-align: center;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 9px 16px;
+  border-radius: 999px;
+  color: #c0c0c8;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  text-decoration-color: #c0c0c8;
+  text-decoration-skip-ink: none;
+}
+
+.wx-footer .wx-footer-bottom .wx-copyright a {
+  color: inherit;
+  text-decoration: inherit;
+  text-decoration-skip-ink: none;
+}
+
+.wx-footer .wx-footer-bottom .wx-copyright a:hover,
+.wx-footer .wx-footer-bottom .wx-copyright a:focus-visible {
+  color: var(--site-white);
+  text-decoration-color: var(--site-white);
 }
 
 /* ------ Book a Session ------ */

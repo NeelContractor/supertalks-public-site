@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { SiteRenderer } from "../lib/site-render";
+import { Toaster } from "../components/ui/sonner";
 import { applySiteTheme, saveSiteTheme } from "../lib/theme";
 import type { FieldStyle, SiteDocument, SitePayload } from "../types";
 
@@ -187,15 +188,18 @@ function SitePage() {
   };
 
   return (
-    <SiteRenderer
-      site={site}
-      edit={edit}
-      selectedSectionId={selectedSectionId}
-      activeFieldKey={selectedFieldKey}
-      onSelect={handleSelect}
-      onSelectField={handleSelectField}
-      onEditField={applyFieldEdit}
-      client={data}
-    />
+    <>
+      <Toaster position="top-center" richColors />
+      <SiteRenderer
+        site={site}
+        edit={edit}
+        selectedSectionId={selectedSectionId}
+        activeFieldKey={selectedFieldKey}
+        onSelect={handleSelect}
+        onSelectField={handleSelectField}
+        onEditField={applyFieldEdit}
+        client={data}
+      />
+    </>
   );
 }

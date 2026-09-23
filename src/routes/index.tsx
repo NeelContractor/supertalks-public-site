@@ -4,6 +4,9 @@ import headerLogo from "../assets/wix-header-logo.png";
 import footerLogo from "../assets/wix-logo.png";
 import scene from "../assets/wix-livingroom.jpg";
 import portrait from "../assets/wix-portrait.jpg";
+import anahataImg from "@/assets/icons/anahata.png"
+import lotusImg from "@/assets/icons/lotus-1.png"
+import shellImg from "@/assets/icons/shell-1.png"
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -30,6 +33,10 @@ const WIX_LINKS = [
   { label: "About", href: "#about" },
   { label: "Contact", href: "#contact" },
 ];
+
+const env =
+  typeof process !== "undefined" && typeof process.env === "object" ? process.env : {};
+const SUPERTALKS_URL = env.BUN_PUBLIC_SUPERTALKS_URL ?? "http://fake_supertalks.com";
 
 function MenuIcon() {
   return (
@@ -212,7 +219,13 @@ function Index() {
         <h2>My Approach</h2>
         <div className="wx-approach-list">
           <div className="wx-approach-row">
-            <LeafIcon />
+            {/* <LeafIcon /> */}
+            <img
+              src={anahataImg}
+              alt=""
+              width={100}
+              height={100}
+            />
             <h3>Confidentiality</h3>
             <p>
               Confidentiality is at the core of our therapy practice. We prioritize privacy and trust, ensuring that
@@ -220,7 +233,13 @@ function Index() {
             </p>
           </div>
           <div className="wx-approach-row">
-            <BloomIcon />
+            {/* <BloomIcon /> */}
+            <img
+              src={lotusImg}
+              alt=""
+              width={100}
+              height={100}
+            />
             <h3>Empathy</h3>
             <p>
               Empathy is the foundation of our therapeutic approach. We provide a compassionate and understanding
@@ -228,7 +247,13 @@ function Index() {
             </p>
           </div>
           <div className="wx-approach-row">
-            <TeardropIcon />
+            {/* <TeardropIcon /> */}
+            <img
+              src={shellImg}
+              alt=""
+              width={100}
+              height={100}
+            />
             <h3>Personalized Care</h3>
             <p>
               We believe in offering personalized care to every client. Our tailored therapy sessions focus on your
@@ -319,13 +344,14 @@ function Index() {
         <div className="wx-footer-col">
           <a href="#privacy">Privacy Policy</a>
           <a href="#accessibility">Accessibility Statement</a>
+        </div>
+        </div>
+        <div className="wx-footer-bottom">
           <p className="wx-copyright">
-            © 2035 by Lee Mor. Powered and secured by{" "}
-            <a className="is-underline" href="https://www.fake_supertalks.com" target="_blank" rel="noreferrer noopener">
-              Supertalks
+            <a className="is-underline" href={SUPERTALKS_URL} target="_blank" rel="noreferrer noopener">
+              © 2035 by Lee Mor. Powered and secured by Supertalks
             </a>
           </p>
-        </div>
         </div>
       </footer>
 
