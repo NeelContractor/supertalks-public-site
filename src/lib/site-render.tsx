@@ -6,8 +6,6 @@ import {
   fetchOpenSlots,
   formatPrice,
   orderQuestions,
-  sendQuestionMessage,
-  type ClientQuestion,
   type OpenSlot,
   type QuestionOrderClientDetails,
   type QuestionOrderItem,
@@ -16,7 +14,6 @@ import { useAuth, type UseAuth } from "./useAuth";
 import { AuthModal } from "./AuthModal";
 import { runCheckout, useGatewayReturn } from "./pay";
 import { toast } from "sonner";
-import { useStore } from "./store";
 import anahataImg from "@/assets/icons/anahata.png"
 import lotusImg from "@/assets/icons/lotus-1.png"
 import shellImg from "@/assets/icons/shell-1.png"
@@ -46,6 +43,10 @@ const LOCKED_SECTIONS = new Set(["book", "question"]);
 const env =
   typeof process !== "undefined" && typeof process.env === "object" ? process.env : {};
 const SUPERTALKS_URL = env.BUN_PUBLIC_SUPERTALKS_URL ?? "http://fake_supertalks.com";
+// The admin dashboard app owns client bookings/questions tracking. Links below
+// point there instead of to tracking pages on this public site.
+const EDITOR_ORIGIN = env.BUN_PUBLIC_EDITOR_ORIGIN ?? "http://localhost:3001";
+const dashboardUrl = (path: string) => `${EDITOR_ORIGIN}${path}`;
 
 /** Shared toast id so loading → success/error replaces the same notification. */
 const PAY_TOAST_ID = "supertalks-pay";
@@ -1015,7 +1016,7 @@ function BookingSection({
   onEditValue?: (sectionId: string, field: string, value: string) => void;
   client?: SiteClientInfo;
   auth: UseAuth;
-  onNeedAuth: () => void;
+  onNeedAuth: (mode?: "signin" | "signup") => void;
   authNonce: number;
 }) {
   const props = propsOf(section);
@@ -1046,7 +1047,6 @@ function BookingSection({
     });
     if (ok) {
       toast.success("Payment successful! Your session is confirmed.", { id: PAY_TOAST_ID });
-      void useStore.getState().loadBookings(true);
       setRefreshNonce((n) => n + 1);
     } else if (status === "failed") {
       toast.error("Payment failed. You can try again.", { id: PAY_TOAST_ID });
@@ -1110,12 +1110,10 @@ function BookingSection({
         if (outcome === "redirect") return;
         setStatus({ ok: true, message: "Payment successful! Your session is confirmed." });
         toast.success("Payment successful! Your session is confirmed.", { id: PAY_TOAST_ID });
-        void useStore.getState().loadBookings(true);
         setRefreshNonce((n) => n + 1);
       } else {
         setStatus({ ok: true, message: "Session booked and confirmed." });
         toast.success("Session booked and confirmed.", { id: PAY_TOAST_ID });
-        void useStore.getState().loadBookings(true);
       }
     } catch (err) {
       const message =
@@ -1226,22 +1224,32 @@ function BookingSection({
             {status ? (
               <p className={status.ok ? "wx-book-ok" : "wx-book-danger"}>{status.message}</p>
             ) : null}
-            <p className="wx-book-note">
-              {auth.user ? (
-                <>
-                  Signed in as {auth.user.email}.{" "}
-                  <button type="button" className="wx-linkbtn" onClick={auth.signOut}>
-                    Sign out
+            {auth.user ? (
+              <p className="wx-book-note">
+                Signed in as {auth.user.email}.{" "}
+                <button type="button" className="wx-linkbtn" onClick={auth.signOut}>
+                  Sign out
+                </button>
+                <a className="wx-auth-btn wx-auth-btn-solid" href={dashboardUrl("/dashboard")}>
+                  Go to Dashboard
+                </a>
+                <a className="wx-linkbtn" href={dashboardUrl("/bookings")}>
+                  Track your bookings in your dashboard →
+                </a>
+              </p>
+            ) : (
+              <p className="wx-book-note">
+                Sign in (or create a free account) to book a slot.
+                <span className="wx-auth-btns">
+                  <button type="button" className="wx-auth-btn" onClick={() => onNeedAuth("signin")}>
+                    Sign in
                   </button>
-                  <br />
-                  <a className="wx-linkbtn" href="/my/bookings">
-                    Open all your bookings in full page →
-                  </a>
-                </>
-              ) : (
-                "Sign in (or create a free account) to book a slot."
-              )}
-            </p>
+                  <button type="button" className="wx-auth-btn wx-auth-btn-solid" onClick={() => onNeedAuth("signup")}>
+                    Create Account
+                  </button>
+                </span>
+              </p>
+            )}
           </>
         )}
       </div>
@@ -1269,7 +1277,7 @@ function QuestionSection({
   onEditValue?: (sectionId: string, field: string, value: string) => void;
   client?: SiteClientInfo;
   auth: UseAuth;
-  onNeedAuth: () => void;
+  onNeedAuth: (mode?: "signin" | "signup") => void;
   authNonce: number;
 }) {
   const props = propsOf(section);
@@ -1280,23 +1288,12 @@ function QuestionSection({
     ((items: QuestionOrderItem[], clientDetails: QuestionOrderClientDetails) => Promise<void>) | null
   >(null);
 
-  const [tab, setTab] = useState<"ask" | "mine">("ask");
-  const myQuestions = useStore((s) => s.questions);
-  const questionsLoaded = useStore((s) => s.questionsLoaded);
-  const myLoading = useStore((s) => s.questionsLoading && !s.questionsLoaded);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const threadMessages = useStore((s) => (activeId ? s.messagesByQuestion[activeId] : undefined)) ?? [];
-  const threadLoading = useStore((s) => (activeId ? !!s.threadsLoading[activeId] : false));
-  const [reply, setReply] = useState("");
-  const [replySending, setReplySending] = useState(false);
-
   // Back from the payment gateway: finish the order once the payment lands.
   useGatewayReturn((_outcome, _paymentId, status) => {
-    setReplySending(false);
     const ok = status === "success";
     const message =
       status === "success"
-        ? "Payment successful! Your questions have been sent."
+        ? "Payment successful! Your questions have been sent. Track replies from your dashboard."
         : status === "failed"
           ? "Payment failed. Please try again."
           : status === "pending"
@@ -1305,7 +1302,6 @@ function QuestionSection({
     setStatus({ ok, message });
     if (ok) {
       toast.success(message, { id: PAY_TOAST_ID });
-      void useStore.getState().loadQuestions(true);
     } else if (status === "failed") {
       toast.error(message, { id: PAY_TOAST_ID });
     } else if (status === "pending") {
@@ -1389,11 +1385,9 @@ function QuestionSection({
       setCategoryIndex(null);
       setPicked([]);
       const successMsg =
-        "Payment successful! Your questions have been sent and you'll get personal answers in your question chat.";
+        "Payment successful! Your questions have been sent. Track replies and continue chatting from your dashboard.";
       setStatus({ ok: true, message: successMsg });
       toast.success(successMsg, { id: PAY_TOAST_ID });
-      setTab("mine");
-      void useStore.getState().loadQuestions(true);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Could not create your order. Please try again.";
@@ -1442,61 +1436,7 @@ function QuestionSection({
     void createOrder(items, cleanDetails);
   };
 
-  const openThread = (q: ClientQuestion) => {
-    setActiveId(q.id);
-    setReply("");
-    useStore
-      .getState()
-      .openThread(q.id)
-      .catch((err) => {
-        setStatus({ ok: false, message: err instanceof Error ? err.message : "Could not open this conversation." });
-      });
-  };
-
-  const handleSendReply = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!activeId || !reply.trim()) return;
-    setReplySending(true);
-    try {
-      const result = await sendQuestionMessage(activeId, reply.trim());
-      if (result.requiresPayment) {
-        setStatus({ ok: true, message: "Redirecting to secure payment…" });
-        toast.loading("Redirecting to secure payment…", { id: PAY_TOAST_ID });
-        const outcome = await runCheckout(result.payment, window.location.href);
-        if (outcome === "redirect") return;
-        if (outcome.message) useStore.getState().appendMessage(activeId, outcome.message);
-        if (outcome.question) {
-          useStore.getState().updateQuestionStatus(outcome.question.id, outcome.question.status);
-        }
-        setReply("");
-        setStatus({ ok: true, message: "Payment successful! Your question has been sent." });
-        toast.success("Payment successful! Your question has been sent.", { id: PAY_TOAST_ID });
-        void useStore.getState().loadQuestions(true);
-        return;
-      }
-      useStore.getState().appendMessage(activeId, result.message);
-      useStore.getState().updateQuestionStatus(result.question.id, result.question.status);
-      setReply("");
-      void useStore.getState().loadQuestions(true);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Could not send your reply.";
-      setStatus({ ok: false, message });
-      toast.error(message, { id: PAY_TOAST_ID });
-    } finally {
-      setReplySending(false);
-    }
-  };
-
-  useEffect(() => {
-    if (tab !== "mine" || !auth.token) return;
-    void useStore.getState().loadQuestions();
-  }, [tab, auth.token, authNonce]);
-
   const accepting = client?.isAcceptingQuestions !== false;
-  const CLOSED_STATUSES = ["Rejected", "Refunded"];
-  const activeQuestion = activeId ? myQuestions.find((q) => q.id === activeId) ?? null : null;
-  const threadClosed = activeQuestion ? CLOSED_STATUSES.includes(activeQuestion.status) : false;
 
   return (
     <SectionShell section={section} edit={edit} selected={isSectionSelected} onSelect={onSelect}>
@@ -1511,84 +1451,9 @@ function QuestionSection({
           <p className="wx-book-note">Questions are currently paused.</p>
         ) : (
           <>
-            {activeQuestion ? (
-              <div className="wx-chat">
-                <button type="button" className="wx-linkbtn wx-chat-back" onClick={() => setActiveId(null)}>
-                  ← Back to your questions
-                </button>
-                <div className="wx-chat-question">
-                  <p className="wx-chat-question-text">{activeQuestion.questionText}</p>
-                  <p className="wx-book-note">
-                    {activeQuestion.status}
-                    {activeQuestion.category ? ` · ${activeQuestion.category}` : ""}
-                    {client?.questionPricePaise != null
-                      ? ` · ${formatPrice(client.questionPricePaise)}`
-                      : ""}
-                  </p>
-                </div>
-                <div className="wx-chat-thread">
-                  {threadLoading && threadMessages.length === 0 ? (
-                    <p className="wx-book-note">Loading conversation…</p>
-                  ) : threadMessages.length === 0 ? (
-                    <p className="wx-book-note">No messages yet. Send a reply to start the conversation (paid per message).</p>
-                  ) : (
-                    threadMessages.map((m) => {
-                      const mine = m.senderRole === "Client";
-                      return (
-                        <div key={m.id} className={`wx-msg${mine ? " wx-msg-mine" : " wx-msg-theirs"}`}>
-                          <div className="wx-msg-bubble">
-                            {!mine && m.sender?.name ? (
-                              <p className="wx-msg-name">{m.sender.name}</p>
-                            ) : null}
-                            <p className="wx-msg-body">{m.body}</p>
-                            <p className="wx-msg-time">
-                              {new Date(m.createdAt).toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-                {threadClosed ? (
-                  <p className="wx-chat-note">This conversation is closed.</p>
-                ) : (
-                  <form className="wx-chat-reply" onSubmit={handleSendReply}>
-                    <input
-                      type="text"
-                      value={reply}
-                      onChange={(e) => setReply(e.target.value)}
-                      placeholder="Type a question (paid per message)…"
-                      maxLength={2000}
-                    />
-                    <button type="submit" className="wx-btn wx-btn-primary" disabled={replySending || !reply.trim()}>
-                      {replySending ? "Sending…" : "Send"}
-                    </button>
-                  </form>
-                )}
-              </div>
-            ) : (
+            {(
               <>
-                <div className="wx-question-tabs" role="tablist">
-                  <button
-                    type="button"
-                    className={tab === "ask" ? "is-active" : ""}
-                    onClick={() => setTab("ask")}
-                  >
-                    Ask a Question
-                  </button>
-                  <button
-                    type="button"
-                    className={tab === "mine" ? "is-active" : ""}
-                    onClick={() => setTab("mine")}
-                  >
-                    Your Questions{questionsLoaded && myQuestions.length > 0 ? ` (${myQuestions.length})` : ""}
-                  </button>
-                </div>
-
-                {tab === "ask" ? (
-                  <>
-                    <div className="max-w-4xl">
+                <div className="max-w-4xl">
                       <header className="m-8">
                         <p className="text-sm font-semibold text-indigo-600 mb-2">STEP 1 OF 2</p>
                         <h3 className="text-2xl md:text-3xl font-bold text-gray-900">Select Your Question Topic</h3>
@@ -1786,54 +1651,38 @@ function QuestionSection({
                       </div>
                     </div>
                   </>
-                ) : !auth.user ? (
-                  <div className="wx-book-note">
-                    <p>Sign in (or create a free account) to see your questions.</p>
-                    <button type="button" className="wx-linkbtn" onClick={onNeedAuth}>
-                      Sign in
-                    </button>
-                  </div>
-                ) : myLoading ? (
-                  <p className="wx-book-note">Loading your questions…</p>
-                ) : myQuestions.length === 0 ? (
-                  <p className="wx-book-note">You haven't asked any questions yet.</p>
-                ) : (
-                  <div className="wx-my-questions max-w-4xl mx-auto">
-                    {myQuestions.slice(0, 3).map((q) => (
-                      <button type="button" key={q.id} className="wx-my-question" onClick={() => openThread(q)}>
-                        <p className="wx-my-question-text">{q.questionText}</p>
-                        <p className="wx-my-question-meta">
-                          {q.status}
-                          {q.lastMessage
-                            ? ` · ${q.lastMessage.senderRole === "Astrologer" ? "Astrologer" : "You"}: ${q.lastMessage.body.slice(0, 60)}`
-                            : ""}
-                        </p>
-                      </button>
-                    ))}
-                    <a className="wx-linkbtn" href="/dashboard">
-                      Go to Dashboard →
-                    </a>
-                  </div>
                 )}
               </>
             )}
             {status ? (
               <p className={status.ok ? "wx-book-ok" : "wx-book-danger"}>{status.message}</p>
             ) : null}
-            <p className="wx-book-note">
-              {auth.user ? (
-                <>
-                  Signed in as {auth.user.email}.{" "}
-                  <button type="button" className="wx-linkbtn" onClick={auth.signOut}>
-                    Sign out
+            {auth.user ? (
+              <p className="wx-book-note">
+                Signed in as {auth.user.email}.{" "}
+                <button type="button" className="wx-linkbtn" onClick={auth.signOut}>
+                  Sign out
+                </button>
+                <a className="wx-auth-btn wx-auth-btn-solid" href={dashboardUrl("/dashboard")}>
+                  Go to Dashboard
+                </a>
+                <a className="wx-linkbtn" href={dashboardUrl("/questions")}>
+                  Track your questions in your dashboard →
+                </a>
+              </p>
+            ) : (
+              <p className="wx-book-note">
+                Sign in (or create a free account) to send your question.
+                <span className="wx-auth-btns">
+                  <button type="button" className="wx-auth-btn" onClick={() => onNeedAuth("signin")}>
+                    Sign in
                   </button>
-                </>
-              ) : (
-                "Sign in (or create a free account) to send your question."
-              )}
-            </p>
-          </>
-        )}
+                  <button type="button" className="wx-auth-btn wx-auth-btn-solid" onClick={() => onNeedAuth("signup")}>
+                    Create Account
+                  </button>
+                </span>
+              </p>
+            )}
       </div>
     </SectionShell>
   );
@@ -1931,6 +1780,7 @@ export function SiteRenderer({
   const handleEditField = onEditField ?? (() => {});
   const auth = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [authNonce, setAuthNonce] = useState(0);
   const [localField, setLocalField] = useState<{ sectionId: string; field: string } | null>(null);
   const [toolbarRect, setToolbarRect] = useState<{
@@ -2004,7 +1854,10 @@ const selectField = (sectionId: string, field: string) => {
       handleEditField(sectionId, field, { value }),
     client,
     auth,
-    onNeedAuth: () => setAuthOpen(true),
+    onNeedAuth: (mode?: "signin" | "signup") => {
+      setAuthMode(mode ?? "signin");
+      setAuthOpen(true);
+    },
     authNonce,
   });
 
@@ -2092,6 +1945,7 @@ function fieldLabelOf(key: string): string {
       ) : null}
       <AuthModal
         open={authOpen}
+        initialMode={authMode}
         onClose={() => setAuthOpen(false)}
         onAuthenticated={(res) => {
           auth.applyAuth(res);
@@ -2099,7 +1953,7 @@ function fieldLabelOf(key: string): string {
         }}
       />
       {edit ? null : (
-        <a className="wx-dash-float" href="/dashboard">
+        <a className="wx-dash-float" href={dashboardUrl("/dashboard")}>
           My Dashboard
         </a>
       )}

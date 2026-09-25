@@ -166,17 +166,6 @@ export function createBooking(
   });
 }
 
-export function askQuestion(
-  astrologerId: string,
-  questionText: string,
-  category: string,
-): Promise<{ question: unknown }> {
-  return request("/questions", {
-    method: "POST",
-    body: JSON.stringify({ astrologerId, questionText, category }),
-  });
-}
-
 export interface QuestionOrderItem {
   questionText: string;
   category?: string;
@@ -244,10 +233,6 @@ export interface QuestionPaymentIntent {
   clientDetails?: QuestionOrderClientDetails | null;
 }
 
-export type SendQuestionMessageResult =
-  | { requiresPayment: true; payment: QuestionPaymentIntent; question: ClientQuestion }
-  | { requiresPayment: false; message: ChatMessage; question: ClientQuestion };
-
 export interface CompletedPayment {
   id: string;
   amountPaise: number;
@@ -290,29 +275,6 @@ export function getPayment(paymentId: string): Promise<PaymentOutcome> {
   return request(`/payments/${paymentId}`);
 }
 
-export function listMyQuestions(): Promise<{
-  questions: ClientQuestion[];
-  total: number;
-}> {
-  return request("/questions?limit=100");
-}
-
-export function fetchQuestionMessages(
-  id: string,
-): Promise<{ question: ClientQuestion; messages: ChatMessage[] }> {
-  return request(`/questions/${id}/messages`);
-}
-
-export function sendQuestionMessage(
-  id: string,
-  body: string,
-): Promise<SendQuestionMessageResult> {
-  return request(`/questions/${id}/messages`, {
-    method: "POST",
-    body: JSON.stringify({ body }),
-  });
-}
-
 export function completePayment(
   paymentId: string,
 ): Promise<PaymentOutcome> {
@@ -329,29 +291,6 @@ export interface ClientBooking {
   clientNote?: string | null;
   cancellationReason?: string | null;
   astrologer?: { id: string; slug?: string | null; user: { id: string; name: string } } | null;
-}
-
-export interface MyBookingsResult {
-  bookings: ClientBooking[];
-  total: number;
-  counts: {
-    all: number;
-    Confirmed: number;
-    Completed: number;
-    Cancelled: number;
-    Pending: number;
-  };
-}
-
-export function listMyBookings(): Promise<MyBookingsResult> {
-  return request("/bookings?limit=100");
-}
-
-export function cancelBooking(id: string, reason?: string): Promise<{ booking: ClientBooking }> {
-  return request(`/bookings/${id}/cancel`, {
-    method: "PATCH",
-    body: JSON.stringify({ reason }),
-  });
 }
 
 export function formatPrice(paise: number | null | undefined): string {

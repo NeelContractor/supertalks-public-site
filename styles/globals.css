@@ -588,7 +588,7 @@
   grid-template-columns: 3.27245053% 2.58751903% 23.43987823% 27.47336377% 40.94368341%;
   align-items: start;
   border-top: 1px solid var(--site-maroon);
-  padding: 0 0 122px;
+  padding: 4px 4px 122px;
 }
 
 .wx-approach-row:nth-child(2) {
@@ -1044,6 +1044,38 @@
   font-size: 17px;
   text-decoration: underline;
   cursor: pointer;
+}
+
+.wx-auth-btns {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: 10px;
+}
+
+.wx-auth-btn {
+  display: inline-block;
+  box-sizing: border-box;
+  padding: 8px 20px;
+  border: 1px solid var(--site-maroon);
+  border-radius: 6.75px;
+  background: transparent;
+  color: var(--site-maroon);
+  font-family: var(--site-body);
+  font-size: 15px;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.wx-auth-btn:hover {
+  opacity: 0.85;
+}
+
+.wx-auth-btn-solid {
+  background: var(--site-maroon);
+  color: var(--site-white);
 }
 
 /* ------ Ask a Question ------ */
@@ -1585,6 +1617,43 @@
 }
 
 .wx-auth-form input:focus {
+  outline: 2px solid var(--site-maroon);
+  outline-offset: 1px;
+}
+
+.wx-password-input {
+  position: relative;
+  width: 100%;
+}
+
+.wx-password-input input {
+  padding-right: 44px;
+}
+
+.wx-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--site-maroon);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.wx-password-toggle:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.wx-password-toggle:focus-visible {
   outline: 2px solid var(--site-maroon);
   outline-offset: 1px;
 }

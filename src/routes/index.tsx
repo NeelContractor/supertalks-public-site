@@ -37,6 +37,8 @@ const WIX_LINKS = [
 const env =
   typeof process !== "undefined" && typeof process.env === "object" ? process.env : {};
 const SUPERTALKS_URL = env.BUN_PUBLIC_SUPERTALKS_URL ?? "http://fake_supertalks.com";
+const EDITOR_ORIGIN = env.BUN_PUBLIC_EDITOR_ORIGIN ?? "http://localhost:3001";
+const dashboardUrl = (path: string) => `${EDITOR_ORIGIN}${path}`;
 
 function MenuIcon() {
   return (
@@ -110,7 +112,7 @@ function Index() {
             <img src={headerLogo} alt="Lee Mor" width={179} height={39} />
           </a>
           <div className="wx-header-actions">
-            <a className="wx-header-dash" href="/dashboard">
+            <a className="wx-header-dash" href={dashboardUrl("/dashboard")}>
               My Dashboard
             </a>
             {/* <button
@@ -137,7 +139,7 @@ function Index() {
             <a className="wx-btn wx-btn-primary" href="#words">
               Get Started
             </a>
-            <a className="wx-btn wx-btn-outline" href="/dashboard">
+            <a className="wx-btn wx-btn-outline" href={dashboardUrl("/dashboard")}>
               My Dashboard
             </a>
           </div>

@@ -11,9 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SlugRouteImport } from './routes/$slug'
-import { Route as MyQuestionsRouteImport } from './routes/my.questions'
-import { Route as MyBookingsRouteImport } from './routes/my.bookings'
-import { Route as DashboardRouteImport } from './routes/my.dashboard'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -27,60 +24,30 @@ const SlugRoute = SlugRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 
-const MyQuestionsRoute = MyQuestionsRouteImport.update({
-  id: '/my/questions',
-  path: '/my/questions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-
-const MyBookingsRoute = MyBookingsRouteImport.update({
-  id: '/my/bookings',
-  path: '/my/bookings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
-  '/my/questions': typeof MyQuestionsRoute
-  '/my/bookings': typeof MyBookingsRoute
-  '/dashboard': typeof DashboardRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
-  '/my/questions': typeof MyQuestionsRoute
-  '/my/bookings': typeof MyBookingsRoute
-  '/dashboard': typeof DashboardRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
-  '/my/questions': typeof MyQuestionsRoute
-  '/my/bookings': typeof MyBookingsRoute
-  '/dashboard': typeof DashboardRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$slug' | '/my/questions' | '/my/bookings' | '/dashboard'
+  fullPaths: '/' | '/$slug'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$slug' | '/my/questions' | '/my/bookings' | '/dashboard'
-  id: '__root__' | '/' | '/$slug' | '/my/questions' | '/my/bookings' | '/dashboard'
+  to: '/' | '/$slug'
+  id: '__root__' | '/' | '/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SlugRoute: typeof SlugRoute
-  MyQuestionsRoute: typeof MyQuestionsRoute
-  MyBookingsRoute: typeof MyBookingsRoute
-  DashboardRoute: typeof DashboardRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,36 +66,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/my/questions': {
-      id: '/my/questions'
-      path: '/my/questions'
-      fullPath: '/my/questions'
-      preLoaderRoute: typeof MyQuestionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/my/bookings': {
-      id: '/my/bookings'
-      path: '/my/bookings'
-      fullPath: '/my/bookings'
-      preLoaderRoute: typeof MyBookingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SlugRoute: SlugRoute,
-  MyQuestionsRoute: MyQuestionsRoute,
-  MyBookingsRoute: MyBookingsRoute,
-  DashboardRoute: DashboardRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

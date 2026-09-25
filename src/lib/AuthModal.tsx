@@ -1,18 +1,21 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { signin, signup, type AuthResponse } from "./client";
+import { PasswordField } from "./password-field";
 
 type Mode = "signin" | "signup";
 
 export function AuthModal({
   open,
+  initialMode = "signin",
   onClose,
   onAuthenticated,
 }: {
   open: boolean;
+  initialMode?: Mode;
   onClose: () => void;
   onAuthenticated: (res: AuthResponse) => void;
 }) {
-  const [mode, setMode] = useState<Mode>("signin");
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [identifier, setIdentifier] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -21,6 +24,13 @@ export function AuthModal({
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setMode(initialMode);
+      setError(null);
+    }
+  }, [open, initialMode]);
 
   if (!open) return null;
 
@@ -154,17 +164,7 @@ export function AuthModal({
               />
             </label>
           )}
-          <label>
-            Password
-            <input
-              type="password"
-              required
-              minLength={1}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-            />
-          </label>
+          <PasswordField value={password} onChange={setPassword} placeholder="Password" />
           {mode === "signup" ? (
             <p className="wx-auth-hint">Password needs 8+ characters, an uppercase letter, and a number.</p>
           ) : null}
