@@ -35,4 +35,6 @@ export interface SitePayload {
   slotDurationMinutes?: number;
   isAcceptingQuestions?: boolean;
   isAcceptingBookings?: boolean;
+  /** Astrologer opted into a free-text question box on the public site. */
+  allowCustomQuestions?: boolean;
 }

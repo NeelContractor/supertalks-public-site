@@ -603,6 +603,12 @@ function TeardropIcon() {
   );
 }
 
+/** Bounds for the opt-in free-text question, matching the batch order schema. */
+const CUSTOM_MIN_LEN = 3;
+const CUSTOM_MAX_LEN = 500;
+/** Labels the custom question in the astrologoger dashboard. */
+const CUSTOM_CATEGORY = "Custom Question";
+
 export interface SiteClientInfo {
   slug: string;
   astrologerId?: string;
@@ -612,6 +618,8 @@ export interface SiteClientInfo {
   slotDurationMinutes?: number;
   isAcceptingQuestions?: boolean;
   isAcceptingBookings?: boolean;
+  /** Renders the free-text question box below the prefilled ones. */
+  allowCustomQuestions?: boolean;
 }
 
 function dateKey(date: Date): string {
@@ -1323,6 +1331,17 @@ function QuestionSection({
     .filter((topic) => topic.questions.length > 0);
   const pricePaise = typeof client?.questionPricePaise === "number" ? client.questionPricePaise : 0;
 
+  // Free-text question, shown only when the astrologer opted in. Limits mirror
+  // orderQuestionsSchema: items[].questionText is trim().min(3).max(1000).
+  const customEnabled = client?.allowCustomQuestions === true;
+  const [customQuestion, setCustomQuestion] = useState("");
+  const customTrimmed = customQuestion.trim();
+  const customTooShort = customEnabled && customTrimmed.length > 0 && customTrimmed.length < CUSTOM_MIN_LEN;
+  const customTooLong = customTrimmed.length > CUSTOM_MAX_LEN;
+  // Only a valid custom question is counted, so a half-typed one can never be
+  // sent to the API and rejected at checkout.
+  const customCounted = customEnabled && customTrimmed.length >= CUSTOM_MIN_LEN && !customTooLong;
+
   const [categoryIndex, setCategoryIndex] = useState<number | null>(null);
   const [picked, setPicked] = useState<QuestionOrderItem[]>([]);
   const [clientDetails, setClientDetails] = useState<QuestionOrderClientDetails>({
@@ -1362,11 +1381,18 @@ function QuestionSection({
     key: string;
     label: string;
     category: string;
-  }[] = picked.map((q) => ({
-    key: `${q.category ?? "General"}::${q.questionText}`,
-    label: q.questionText,
-    category: q.category ?? "General",
-  }));
+  }[] = [
+    ...picked.map((q) => ({
+      key: `${q.category ?? "General"}::${q.questionText}`,
+      label: q.questionText,
+      category: q.category ?? "General",
+    })),
+    // The custom question rides the same path as a ticked question, so the
+    // count, total and checkout all account for it automatically.
+    ...(customCounted
+      ? [{ key: `${CUSTOM_CATEGORY}::${customTrimmed}`, label: customTrimmed, category: CUSTOM_CATEGORY }]
+      : []),
+  ];
 
   const totalCount = entryList.length;
   const totalPaise = totalCount * pricePaise;
@@ -1384,6 +1410,7 @@ function QuestionSection({
       if (outcome === "redirect") return;
       setCategoryIndex(null);
       setPicked([]);
+      setCustomQuestion("");
       const successMsg =
         "Payment successful! Your questions have been sent. Track replies and continue chatting from your dashboard.";
       setStatus({ ok: true, message: successMsg });
@@ -1411,6 +1438,8 @@ function QuestionSection({
     const details = clientDetails;
     if (
       entryList.length === 0 ||
+      customTooShort ||
+      customTooLong ||
       pricePaise <= 0 ||
       !details.clientName.trim() ||
       !details.birthDate ||
@@ -1563,6 +1592,34 @@ function QuestionSection({
                         </>
                       )}
 
+                      {customEnabled ? (
+                        <div className="mt-6 rounded-2xl border-2 border-dashed border-gray-300 p-5">
+                          <h4 className="text-lg font-bold text-gray-900">Ask your own question</h4>
+                          <p className="mt-1 text-sm text-gray-500">
+                            Write your question in your own words and it will be sent along with
+                            your selection.
+                          </p>
+                          <textarea
+                            value={customQuestion}
+                            onChange={(e) => setCustomQuestion(e.target.value.slice(0, CUSTOM_MAX_LEN))}
+                            rows={4}
+                            placeholder="e.g. Will I get the promotion I was expecting this quarter?"
+                            className="mt-3 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none"
+                          />
+                          <p
+                            className={`mt-2 text-xs ${
+                              customTooShort || customTooLong ? "text-red-500" : "text-gray-400"
+                            }`}
+                          >
+                            {customTooShort
+                              ? `Please write at least ${CUSTOM_MIN_LEN} characters.`
+                              : customTooLong
+                                ? `Please keep it under ${CUSTOM_MAX_LEN} characters.`
+                                : `${customTrimmed.length}/${CUSTOM_MAX_LEN} characters`}
+                          </p>
+                        </div>
+                      ) : null}
+
                       <div className="mt-8 pt-6 border-t border-gray-200">
                         {totalCount > 0 && (
                           <div className="mb-6 rounded-2xl border border-gray-200 bg-gray-50 p-5">
@@ -1635,6 +1692,8 @@ function QuestionSection({
                             onClick={handleProceed}
                             disabled={
                               totalCount === 0 ||
+                              customTooShort ||
+                              customTooLong ||
                               pricePaise <= 0 ||
                               submitting ||
                               !clientDetails.clientName.trim() ||
