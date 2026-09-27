@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 const DISPLAY_STACKS: Record<string, string> = {
   serif: '"eschaton", Georgia, serif',
@@ -145,6 +146,40 @@ function itemsOf(props: Record<string, unknown>, key: string): Array<Record<stri
     Record<string, unknown>
   >;
   return [];
+}
+
+/** Non-negative integer from a template number field, 0 when unset/invalid. */
+function intPaise(props: Record<string, unknown>, key: string): number {
+  const raw = props[key];
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+}
+
+/** The card's own fields, with the profile as the fallback price source so a
+ * service left at 0 renders the same price the checkout would charge. */
+function serviceOf(
+  item: Record<string, unknown>,
+  index: number,
+  client?: SiteClientInfo,
+): PickedService {
+  const kind: ServiceKind = p(item, "type", "question") === "slot" ? "slot" : "question";
+  const own = intPaise(item, "pricePaise");
+  return {
+    serviceId: serviceIdForIndex(index),
+    kind,
+    title: p(item, "title"),
+    pricePaise:
+      own > 0
+        ? own
+        : kind === "slot"
+          ? (client?.callPricePerSlotPaise ?? 0)
+          : (client?.questionPricePaise ?? 0),
+    durationMinutes:
+      intPaise(item, "durationMinutes") > 0
+        ? intPaise(item, "durationMinutes")
+        : (client?.slotDurationMinutes ?? 0),
+    nonce: 0,
+  };
 }
 
 // ---- Click-to-edit ---------------------------------------------------------
@@ -609,6 +644,27 @@ const CUSTOM_MAX_LEN = 500;
 /** Labels the custom question in the astrologoger dashboard. */
 const CUSTOM_CATEGORY = "Custom Question";
 
+export type ServiceKind = "question" | "slot";
+
+/** A service card chosen on the Services section, handed to the checkout
+ * section that owns the details step. */
+export interface PickedService {
+  serviceId: string;
+  kind: ServiceKind;
+  title: string;
+  pricePaise: number;
+  durationMinutes: number;
+  /** Bumped on every pick so re-picking the same service still fires. */
+  nonce: number;
+}
+
+/** Mirrors `serviceIdForIndex` in the backend's src/lib/site.ts. The backend
+ * parses this string to re-read the service from the astrologoger's own site,
+ * so the format must stay in step with it. */
+export function serviceIdForIndex(index: number): string {
+  return `services:${index}`;
+}
+
 export interface SiteClientInfo {
   slug: string;
   astrologerId?: string;
@@ -847,6 +903,9 @@ function ServicesSection({
   onSelect,
   onSelectField,
   onEditValue,
+  client,
+  onPickService,
+  serviceRequest,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
@@ -854,29 +913,74 @@ function ServicesSection({
   onSelect: (id: string) => void;
   onSelectField?: (sectionId: string, field: string) => void;
   onEditValue?: (sectionId: string, field: string, value: string) => void;
+  client?: SiteClientInfo;
+  onPickService?: (service: PickedService) => void;
+  serviceRequest?: PickedService | null;
 }) {
   const props = propsOf(section);
   const items = itemsOf(props, "items");
   return (
     <SectionShell section={section} edit={edit} selected={selected} onSelect={onSelect}>
       <div className="wx-services">
-        <div className="wx-services-grid">
+        <div className="wx-services-grid wx-services-grid--cards">
           <div>
             <Editable as="h2" field="heading" section={section} edit={edit} value={p(props, "heading", "Services")} onSelectField={(f) => onSelectField?.(section.id, f)}
                 onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
           </div>
-          {items.map((item, i) => (
-            <React.Fragment key={i}>
-              <article>
-                <span className="wx-rule" />
-                <Editable as="h3" field={`items.${i}.title`} section={section} edit={edit} value={p(item, "title")} onSelectField={(f) => onSelectField?.(section.id, f)}
-                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
-                <Editable as="p" field={`items.${i}.body`} section={section} edit={edit} value={p(item, "body")} onSelectField={(f) => onSelectField?.(section.id, f)}
-                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
-              </article>
-              <div aria-hidden="true" />
-            </React.Fragment>
-          ))}
+          {items.map((item, i) => {
+            const service = serviceOf(item, i, client);
+            const isPicked = serviceRequest?.serviceId === service.serviceId;
+            return (
+              <Card
+                key={i}
+                className="wx-service-card"
+                data-service-id={service.serviceId}
+                data-picked={isPicked || undefined}
+              >
+                <CardHeader>
+                  <Editable as="h3" field={`items.${i}.title`} section={section} edit={edit} value={p(item, "title")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                  onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+                </CardHeader>
+                <CardContent className="wx-service-body">
+                  <Editable as="p" field={`items.${i}.body`} section={section} edit={edit} value={p(item, "body")} onSelectField={(f) => onSelectField?.(section.id, f)}
+                  onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
+                  <dl className="wx-service-meta">
+                    <div>
+                      <dt>Type</dt>
+                      <dd>
+                        <span className={`wx-service-tag wx-service-tag-${service.kind}`}>
+                          {service.kind === "slot" ? "Live session" : "Written question"}
+                        </span>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Duration</dt>
+                      <dd>
+                        {service.kind === "slot" && service.durationMinutes > 0
+                          ? `${service.durationMinutes} min`
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Price</dt>
+                      <dd className="wx-service-price">
+                        {service.pricePaise > 0 ? formatPrice(service.pricePaise) : "Free"}
+                      </dd>
+                    </div>
+                  </dl>
+                  {!edit && service.title && (
+                    <button
+                      type="button"
+                      className="wx-btn wx-btn-primary wx-service-cta"
+                      onClick={() => onPickService?.(service)}
+                    >
+                      {service.kind === "slot" ? "Book this session" : "Ask this question"}
+                    </button>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
     </SectionShell>
@@ -1015,6 +1119,7 @@ function BookingSection({
   auth,
   onNeedAuth,
   authNonce,
+  serviceRequest,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
@@ -1026,6 +1131,7 @@ function BookingSection({
   auth: UseAuth;
   onNeedAuth: (mode?: "signin" | "signup") => void;
   authNonce: number;
+  serviceRequest?: PickedService | null;
 }) {
   const props = propsOf(section);
   const [date, setDate] = useState(() => dateKey(new Date()));
@@ -1036,6 +1142,9 @@ function BookingSection({
   const [submitting, setSubmitting] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
+  // The slot service picked on the Services section, carried into checkout so
+  // the server charges that service's own price.
+  const [pickedSlot, setPickedSlot] = useState<PickedService | null>(null);
   const pendingRef = useRef<string | null>(null);
   const bookRef = useRef<((startAt: string) => Promise<void>) | null>(null);
 
@@ -1110,7 +1219,12 @@ function BookingSection({
     setStatus(null);
     toast.loading("Checking availability and starting your booking…", { id: PAY_TOAST_ID });
     try {
-      const { payment } = await createBooking(client.astrologerId, startAt, crypto.randomUUID());
+      const { payment } = await createBooking(
+        client.astrologerId,
+        startAt,
+        crypto.randomUUID(),
+        pickedSlot?.serviceId,
+      );
       if (payment) {
         setStatus({ ok: true, message: "Redirecting to secure payment…" });
         toast.loading("Redirecting to secure payment…", { id: PAY_TOAST_ID });
@@ -1142,6 +1256,23 @@ function BookingSection({
     }
   }, [authNonce, auth.token]);
 
+  // A slot service picked on the Services section becomes the service for the
+  // next booking here, then we drop the client at the slot picker.
+  useEffect(() => {
+    if (!serviceRequest || serviceRequest.kind !== "slot" || edit) return;
+    setPickedSlot(serviceRequest);
+    const raf = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        document.getElementById("slot-picker")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+      void raf2;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [serviceRequest, edit]);
+
   const handleSelect = (slot: OpenSlot) => {
     if (!auth.token || !client?.astrologerId) {
       pendingRef.current = slot.startAt;
@@ -1162,11 +1293,31 @@ function BookingSection({
         </div>
         {edit ? null : (
           <>
+            {pickedSlot ? (
+              <div className="wx-book-service scroll-mt-24">
+                <div>
+                  <span className="wx-book-service-label">Selected session</span>
+                  <span className="wx-book-service-name">{pickedSlot.title}</span>
+                </div>
+                <span className="wx-book-service-price">
+                  {pickedSlot.pricePaise > 0 ? formatPrice(pickedSlot.pricePaise) : "Free"}
+                  {pickedSlot.durationMinutes > 0 ? ` · ${pickedSlot.durationMinutes} min` : ""}
+                </span>
+                <button
+                  type="button"
+                  className="wx-book-service-clear"
+                  onClick={() => setPickedSlot(null)}
+                  aria-label="Clear selected session"
+                >
+                  Clear
+                </button>
+              </div>
+            ) : null}
             {client?.isAcceptingBookings === false ? (
               <p className="wx-book-note">Bookings are currently paused. Please check back soon.</p>
             ) : (
               <>
-                <div className="wx-book-week">
+                <div id="slot-picker" className="wx-book-week scroll-mt-24">
                   <button
                     type="button"
                     className="wx-book-week-nav"
@@ -1276,6 +1427,7 @@ function QuestionSection({
   auth,
   onNeedAuth,
   authNonce,
+  serviceRequest,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
@@ -1287,6 +1439,7 @@ function QuestionSection({
   auth: UseAuth;
   onNeedAuth: (mode?: "signin" | "signup") => void;
   authNonce: number;
+  serviceRequest?: PickedService | null;
 }) {
   const props = propsOf(section);
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
@@ -1343,7 +1496,9 @@ function QuestionSection({
   const customCounted = customEnabled && customTrimmed.length >= CUSTOM_MIN_LEN && !customTooLong;
 
   const [categoryIndex, setCategoryIndex] = useState<number | null>(null);
-  const [picked, setPicked] = useState<QuestionOrderItem[]>([]);
+  // `pricePaise` is display-only here: the server re-resolves the real charge
+  // from the astrologoger's site, so a tampered client value changes nothing.
+  const [picked, setPicked] = useState<(QuestionOrderItem & { pricePaise?: number })[]>([]);
   const [clientDetails, setClientDetails] = useState<QuestionOrderClientDetails>({
     clientName: "",
     birthDate: "",
@@ -1381,21 +1536,63 @@ function QuestionSection({
     key: string;
     label: string;
     category: string;
+    pricePaise: number;
+    serviceId?: string;
   }[] = [
     ...picked.map((q) => ({
-      key: `${q.category ?? "General"}::${q.questionText}`,
+      key: `${q.serviceId ?? q.category ?? "General"}::${q.questionText}`,
       label: q.questionText,
       category: q.category ?? "General",
+      pricePaise: q.pricePaise ?? pricePaise,
+      serviceId: q.serviceId,
     })),
     // The custom question rides the same path as a ticked question, so the
     // count, total and checkout all account for it automatically.
     ...(customCounted
-      ? [{ key: `${CUSTOM_CATEGORY}::${customTrimmed}`, label: customTrimmed, category: CUSTOM_CATEGORY }]
+      ? [
+          {
+            key: `${CUSTOM_CATEGORY}::${customTrimmed}`,
+            label: customTrimmed,
+            category: CUSTOM_CATEGORY,
+            pricePaise,
+          },
+        ]
       : []),
   ];
 
   const totalCount = entryList.length;
-  const totalPaise = totalCount * pricePaise;
+  const totalPaise = entryList.reduce((sum, entry) => sum + entry.pricePaise, 0);
+
+  // A question service picked on the Services section joins the order as its
+  // own line, then we drop the client at the birth details they must fill in.
+  useEffect(() => {
+    if (!serviceRequest || serviceRequest.kind !== "question" || edit) return;
+    setPicked((cur) =>
+      cur.some((q) => q.serviceId === serviceRequest.serviceId)
+        ? cur
+        : [
+            ...cur,
+            {
+              questionText: serviceRequest.title,
+              category: serviceRequest.title,
+              serviceId: serviceRequest.serviceId,
+              pricePaise: serviceRequest.pricePaise,
+            },
+          ],
+    );
+    // The birth details block only renders once the order has a line item, so
+    // wait for it to exist before scrolling.
+    const raf = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        document.getElementById("birth-details")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+      void raf2;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [serviceRequest, edit]);
 
   const createOrder = async (items: QuestionOrderItem[], details: QuestionOrderClientDetails) => {
     if (!client?.astrologerId) return;
@@ -1440,16 +1637,19 @@ function QuestionSection({
       entryList.length === 0 ||
       customTooShort ||
       customTooLong ||
-      pricePaise <= 0 ||
+      totalPaise <= 0 ||
       !details.clientName.trim() ||
       !details.birthDate ||
       !details.birthTime ||
       !details.birthPlace.trim()
     )
       return;
+    // `serviceId` rides along so the server re-resolves that line's price
+    // instead of billing it at the profile rate.
     const items: QuestionOrderItem[] = entryList.map((entry) => ({
       questionText: entry.label,
       category: entry.category,
+      ...(entry.serviceId ? { serviceId: entry.serviceId } : {}),
     }));
     const cleanDetails: QuestionOrderClientDetails = {
       clientName: details.clientName.trim(),
@@ -1622,7 +1822,7 @@ function QuestionSection({
 
                       <div className="mt-8 pt-6 border-t border-gray-200">
                         {totalCount > 0 && (
-                          <div className="mb-6 rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                          <div id="birth-details" className="mb-6 scroll-mt-24 rounded-2xl border border-gray-200 bg-gray-50 p-5">
                             <h4 className="text-sm font-bold text-gray-900">Your birth details</h4>
                             <p className="mt-1 text-xs text-gray-500">
                               All fields are required for an accurate reading.
@@ -1842,6 +2042,12 @@ export function SiteRenderer({
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [authNonce, setAuthNonce] = useState(0);
   const [localField, setLocalField] = useState<{ sectionId: string; field: string } | null>(null);
+  // A service card's "Pay" button hands its choice to the Question or Booking
+  // section, which owns the details step and the actual checkout. `nonce`
+  // makes re-picking the same service fire again.
+  const [serviceRequest, setServiceRequest] = useState<PickedService | null>(null);
+  const pickService = (next: PickedService) =>
+    setServiceRequest({ ...next, nonce: (serviceRequest?.nonce ?? 0) + 1 });
   const [toolbarRect, setToolbarRect] = useState<{
     top: number;
     left: number;
@@ -1918,6 +2124,8 @@ const selectField = (sectionId: string, field: string) => {
       setAuthOpen(true);
     },
     authNonce,
+    onPickService: pickService,
+    serviceRequest,
   });
 
   const activeSection = active

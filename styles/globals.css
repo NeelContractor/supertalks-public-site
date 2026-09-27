@@ -564,6 +564,164 @@
   max-width: 420px;
 }
 
+/* The CMS Services section renders each item as a shadcn Card, so the
+   `wx-rule` top divider is replaced by the Card's own border. The static
+   demo page in src/routes/index.tsx still renders `article` + `.wx-rule`,
+   which is why the rules above are kept. */
+.wx-services-grid .wx-service-card {
+  max-width: 420px;
+  gap: 16px;
+  border: 1px solid var(--site-maroon);
+  border-radius: 6.75px;
+  background: var(--site-white);
+  box-shadow: none;
+}
+
+.wx-services-grid .wx-service-body p {
+  max-width: 440px;
+  margin: 0;
+  color: var(--site-maroon);
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+/* The Card version lays out with flex + `justify-content: center` so a lone
+   card in the last row sits centred under the row above it (3-up, then 1
+   centred). Scoped to the modifier so the static demo in src/routes/index.tsx
+   keeps the original grid and its aria-hidden row fillers. */
+.wx-services-grid--cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 28px;
+  row-gap: 32px;
+}
+
+.wx-services-grid--cards > div:first-child {
+  flex: 0 0 100%;
+  max-width: none;
+}
+
+.wx-services-grid--cards .wx-service-card {
+  flex: 0 0 calc((100% - 56px) / 3);
+  max-width: calc((100% - 56px) / 3);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Type / duration / price strip. */
+.wx-services-grid .wx-service-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 20px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid rgba(122, 45, 58, 0.16);
+}
+
+.wx-services-grid .wx-service-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wx-services-grid .wx-service-meta dt {
+  color: rgba(122, 45, 58, 0.62);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.wx-services-grid .wx-service-meta dd {
+  margin: 0;
+  color: var(--site-maroon);
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.wx-services-grid .wx-service-price {
+  font-family: var(--site-display);
+  font-size: 20px;
+}
+
+.wx-services-grid .wx-service-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wx-services-grid .wx-service-tag-question {
+  color: #6b4a86;
+}
+
+.wx-services-grid .wx-service-tag-slot {
+  color: #1f6b5c;
+}
+
+.wx-services-grid .wx-service-cta {
+  margin-top: 20px;
+  align-self: flex-start;
+}
+
+.wx-services-grid .wx-service-card[data-picked] {
+  border-color: var(--site-maroon);
+  box-shadow: 0 0 0 2px rgba(122, 45, 58, 0.16);
+}
+
+/* Picked session summary above the slot picker. */
+.wx-book-service {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  max-width: 1377px;
+  margin-bottom: 22px;
+  padding: 14px 18px;
+  border: 1px solid var(--site-maroon);
+  border-radius: 6.75px;
+  background: var(--site-white);
+}
+
+.wx-book-service-label {
+  display: block;
+  color: rgba(122, 45, 58, 0.62);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.wx-book-service-name {
+  display: block;
+  color: var(--site-maroon);
+  font-family: var(--site-display);
+  font-size: 20px;
+}
+
+.wx-book-service-price {
+  margin-left: auto;
+  color: var(--site-maroon);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.wx-book-service-clear {
+  border: 0;
+  background: none;
+  color: var(--site-maroon);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* ------ My Approach ------ */
 
 .wx-approach {
@@ -1692,6 +1850,18 @@
 }
 
 @media (max-width: 900px) {
+  /* The band is a wide crop on desktop (`height: 547px` + `cover`). On a
+     narrow screen that crops the photo down to its centre, so drop the fixed
+     height and scale the whole image down to fit instead. `contain` keeps it
+     fully visible even when `max-height` clamps very wide images, and
+     `.wx-scene`'s background fills the letterbox. */
+  .wx-scene img {
+    height: auto;
+    max-height: 62vh;
+    object-fit: contain;
+    object-position: center;
+  }
+
   .wx-hero {
     grid-template-columns: 1fr;
     min-height: 0;
@@ -1741,6 +1911,12 @@
 
   .wx-services-grid {
     grid-template-columns: 1fr;
+  }
+
+  /* Collapse the Card version to a single full-width column. */
+  .wx-services-grid--cards .wx-service-card {
+    flex: 0 0 100%;
+    max-width: 100%;
   }
 
   .wx-services article {
