@@ -13,6 +13,7 @@ import {
 import { useAuth, type UseAuth } from "./useAuth";
 import { AuthModal } from "./AuthModal";
 import { runCheckout, useGatewayReturn } from "./pay";
+import { ServiceDialog } from "./ServiceDialog";
 import { toast } from "sonner";
 import anahataImg from "@/assets/icons/anahata.png"
 import lotusImg from "@/assets/icons/lotus-1.png"
@@ -1119,7 +1120,6 @@ function BookingSection({
   auth,
   onNeedAuth,
   authNonce,
-  serviceRequest,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
@@ -1131,7 +1131,6 @@ function BookingSection({
   auth: UseAuth;
   onNeedAuth: (mode?: "signin" | "signup") => void;
   authNonce: number;
-  serviceRequest?: PickedService | null;
 }) {
   const props = propsOf(section);
   const [date, setDate] = useState(() => dateKey(new Date()));
@@ -1142,9 +1141,6 @@ function BookingSection({
   const [submitting, setSubmitting] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
-  // The slot service picked on the Services section, carried into checkout so
-  // the server charges that service's own price.
-  const [pickedSlot, setPickedSlot] = useState<PickedService | null>(null);
   const pendingRef = useRef<string | null>(null);
   const bookRef = useRef<((startAt: string) => Promise<void>) | null>(null);
 
@@ -1223,7 +1219,6 @@ function BookingSection({
         client.astrologerId,
         startAt,
         crypto.randomUUID(),
-        pickedSlot?.serviceId,
       );
       if (payment) {
         setStatus({ ok: true, message: "Redirecting to secure payment…" });
@@ -1256,23 +1251,6 @@ function BookingSection({
     }
   }, [authNonce, auth.token]);
 
-  // A slot service picked on the Services section becomes the service for the
-  // next booking here, then we drop the client at the slot picker.
-  useEffect(() => {
-    if (!serviceRequest || serviceRequest.kind !== "slot" || edit) return;
-    setPickedSlot(serviceRequest);
-    const raf = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => {
-        document.getElementById("slot-picker")?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
-      void raf2;
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [serviceRequest, edit]);
-
   const handleSelect = (slot: OpenSlot) => {
     if (!auth.token || !client?.astrologerId) {
       pendingRef.current = slot.startAt;
@@ -1293,26 +1271,6 @@ function BookingSection({
         </div>
         {edit ? null : (
           <>
-            {pickedSlot ? (
-              <div className="wx-book-service scroll-mt-24">
-                <div>
-                  <span className="wx-book-service-label">Selected session</span>
-                  <span className="wx-book-service-name">{pickedSlot.title}</span>
-                </div>
-                <span className="wx-book-service-price">
-                  {pickedSlot.pricePaise > 0 ? formatPrice(pickedSlot.pricePaise) : "Free"}
-                  {pickedSlot.durationMinutes > 0 ? ` · ${pickedSlot.durationMinutes} min` : ""}
-                </span>
-                <button
-                  type="button"
-                  className="wx-book-service-clear"
-                  onClick={() => setPickedSlot(null)}
-                  aria-label="Clear selected session"
-                >
-                  Clear
-                </button>
-              </div>
-            ) : null}
             {client?.isAcceptingBookings === false ? (
               <p className="wx-book-note">Bookings are currently paused. Please check back soon.</p>
             ) : (
@@ -1427,7 +1385,6 @@ function QuestionSection({
   auth,
   onNeedAuth,
   authNonce,
-  serviceRequest,
 }: {
   section: SiteSectionDoc;
   edit: boolean;
@@ -1439,7 +1396,6 @@ function QuestionSection({
   auth: UseAuth;
   onNeedAuth: (mode?: "signin" | "signup") => void;
   authNonce: number;
-  serviceRequest?: PickedService | null;
 }) {
   const props = propsOf(section);
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
@@ -1562,37 +1518,6 @@ function QuestionSection({
 
   const totalCount = entryList.length;
   const totalPaise = entryList.reduce((sum, entry) => sum + entry.pricePaise, 0);
-
-  // A question service picked on the Services section joins the order as its
-  // own line, then we drop the client at the birth details they must fill in.
-  useEffect(() => {
-    if (!serviceRequest || serviceRequest.kind !== "question" || edit) return;
-    setPicked((cur) =>
-      cur.some((q) => q.serviceId === serviceRequest.serviceId)
-        ? cur
-        : [
-            ...cur,
-            {
-              questionText: serviceRequest.title,
-              category: serviceRequest.title,
-              serviceId: serviceRequest.serviceId,
-              pricePaise: serviceRequest.pricePaise,
-            },
-          ],
-    );
-    // The birth details block only renders once the order has a line item, so
-    // wait for it to exist before scrolling.
-    const raf = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => {
-        document.getElementById("birth-details")?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
-      void raf2;
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [serviceRequest, edit]);
 
   const createOrder = async (items: QuestionOrderItem[], details: QuestionOrderClientDetails) => {
     if (!client?.astrologerId) return;
@@ -2046,8 +1971,11 @@ export function SiteRenderer({
   // section, which owns the details step and the actual checkout. `nonce`
   // makes re-picking the same service fire again.
   const [serviceRequest, setServiceRequest] = useState<PickedService | null>(null);
-  const pickService = (next: PickedService) =>
+  const [serviceOpen, setServiceOpen] = useState(false);
+  const pickService = (next: PickedService) => {
     setServiceRequest({ ...next, nonce: (serviceRequest?.nonce ?? 0) + 1 });
+    setServiceOpen(true);
+  };
   const [toolbarRect, setToolbarRect] = useState<{
     top: number;
     left: number;
@@ -2125,7 +2053,6 @@ const selectField = (sectionId: string, field: string) => {
     },
     authNonce,
     onPickService: pickService,
-    serviceRequest,
   });
 
   const activeSection = active
@@ -2220,6 +2147,21 @@ function fieldLabelOf(key: string): string {
         }}
       />
       {edit ? null : (
+        <ServiceDialog
+          open={serviceOpen}
+          service={serviceRequest}
+          client={client}
+          auth={auth}
+          authNonce={authNonce}
+          suppressOutsideDismiss={authOpen}
+          onClose={() => setServiceOpen(false)}
+          onNeedAuth={(mode) => {
+            setAuthMode(mode ?? "signin");
+            setAuthOpen(true);
+          }}
+        />
+      )}
+      {edit || serviceOpen ? null : (
         <a className="wx-dash-float" href={dashboardUrl("/dashboard")}>
           My Dashboard
         </a>

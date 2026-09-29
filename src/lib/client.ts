@@ -159,10 +159,16 @@ export function createBooking(
   startAt: string,
   idempotencyKey: string,
   serviceId?: string,
+  clientDetails?: QuestionOrderClientDetails,
 ): Promise<{ booking: ClientBooking; payment: BookingPaymentIntent | null }> {
   return request("/bookings", {
     method: "POST",
-    body: JSON.stringify({ astrologerId, startAt, ...(serviceId ? { serviceId } : {}) }),
+    body: JSON.stringify({
+      astrologerId,
+      startAt,
+      ...(serviceId ? { serviceId } : {}),
+      ...(clientDetails ? { clientDetails } : {}),
+    }),
     headers: { "Idempotency-Key": idempotencyKey },
   });
 }
@@ -292,6 +298,7 @@ export interface ClientBooking {
   pricePaise: number;
   meetingLink?: string | null;
   clientNote?: string | null;
+  clientDetails?: QuestionOrderClientDetails | null;
   cancellationReason?: string | null;
   astrologer?: { id: string; slug?: string | null; user: { id: string; name: string } } | null;
 }
