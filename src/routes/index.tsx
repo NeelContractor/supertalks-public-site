@@ -7,6 +7,7 @@ import portrait from "../assets/wix-portrait.jpg";
 import anahataImg from "@/assets/icons/anahata.png"
 import lotusImg from "@/assets/icons/lotus-1.png"
 import shellImg from "@/assets/icons/shell-1.png"
+import { dashboardUrl } from "@/lib/editor";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -37,8 +38,6 @@ const WIX_LINKS = [
 const env =
   typeof process !== "undefined" && typeof process.env === "object" ? process.env : {};
 const SUPERTALKS_URL = env.BUN_PUBLIC_SUPERTALKS_URL ?? "http://fake_supertalks.com";
-const EDITOR_ORIGIN = env.BUN_PUBLIC_EDITOR_ORIGIN ?? "http://localhost:3001";
-const dashboardUrl = (path: string) => `${EDITOR_ORIGIN}${path}`;
 
 function MenuIcon() {
   return (

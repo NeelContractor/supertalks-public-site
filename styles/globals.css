@@ -1236,6 +1236,37 @@
   color: var(--site-white);
 }
 
+/* Signed-in line. Laid out as its own flex block so the padded "Go to
+   Dashboard" button can't overflow its line box and paint over the text —
+   an inline-block taller than the line-height bleeds onto the wrapped lines
+   beside it. */
+.wx-account-note {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  margin-top: 22px;
+  color: var(--site-maroon);
+  font-size: 17px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.wx-account-note > p {
+  margin: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.wx-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 18px;
+}
+
 /* ------ Ask a Question ------ */
 
 .wx-question {
@@ -1868,8 +1899,10 @@
     min-height: 0;
   }
 
+  /* Horizontal padding comes from the shared --wx-gutter rule below. */
   .wx-hero-copy {
-    padding: 150px 28px 56px;
+    padding-top: 150px;
+    padding-bottom: 56px;
   }
 
   .wx-hero-copy h2 {
@@ -1973,9 +2006,48 @@
     gap: 40px;
   }
 
+  /* One gutter for the whole page. Desktop uses 63px, which eats too much of a
+     phone's width and leaves the copy visibly cramped. Every section below
+     overrides both sides from this single value, so the rhythm stays even from
+     the header through the footer. Declared on :root (not .wx-page) so a
+     section rendered outside the page shell still resolves it — an undefined
+     custom property makes `var()` fall back to the initial value, which is
+     padding: 0, not the padding the section used to have. */
+  :root {
+    --wx-gutter: 20px;
+  }
+
+  .wx-header,
+  .wx-hero-copy,
+  .wx-words,
+  .wx-about,
+  .wx-services,
+  .wx-approach,
+  .wx-book,
+  .wx-question,
+  .wx-feedback,
+  .wx-faq,
+  .wx-footer-inner,
+  .wx-footer-bottom,
+  .wx-menu-panel-inner {
+    padding-left: var(--wx-gutter, 20px);
+    padding-right: var(--wx-gutter, 20px);
+  }
+
+  /* Vertical rhythm only — the horizontal gutter is handled above. */
   .wx-book,
   .wx-question {
-    padding: 70px 28px 72px;
+    padding-top: 70px;
+    padding-bottom: 72px;
+  }
+
+  .wx-services {
+    padding-top: 32px;
+    padding-bottom: 60px;
+  }
+
+  .wx-footer-inner {
+    padding-top: 44px;
   }
 
   .wx-book-head h2,
@@ -2038,13 +2110,17 @@
   right: 16px;
   z-index: 60;
   padding: 10px 18px;
+  border: 0;
   border-radius: 999px;
   background: var(--site-maroon, #771609);
   color: var(--site-white, #ffffff);
   font-family: var(--site-body);
   font-size: 14px;
   font-weight: 600;
+  line-height: 1.2;
   text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   transition: opacity 150ms ease, transform 150ms ease;
 }
@@ -2450,5 +2526,9 @@
 @media (max-width: 520px) {
   .wx-svc-details {
     grid-template-columns: 1fr;
+  }
+
+  :root {
+    --wx-gutter: 14px;
   }
 }

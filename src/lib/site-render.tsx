@@ -12,8 +12,16 @@ import {
 } from "./client";
 import { useAuth, type UseAuth } from "./useAuth";
 import { AuthModal } from "./AuthModal";
-import { runCheckout, useGatewayReturn } from "./pay";
+import { PAY_TOAST_ID, runCheckout, showPaymentSuccess, useGatewayReturn } from "./pay";
 import { ServiceDialog } from "./ServiceDialog";
+import {
+  consumeRedirectPath,
+  dashboardUrl,
+  isBookingOutcome,
+  isQuestionOutcome,
+  redirectPathFromOutcome,
+  rememberRedirectPath,
+} from "./editor";
 import { toast } from "sonner";
 import anahataImg from "@/assets/icons/anahata.png"
 import lotusImg from "@/assets/icons/lotus-1.png"
@@ -45,13 +53,6 @@ const LOCKED_SECTIONS = new Set(["book", "question"]);
 const env =
   typeof process !== "undefined" && typeof process.env === "object" ? process.env : {};
 const SUPERTALKS_URL = env.BUN_PUBLIC_SUPERTALKS_URL ?? "http://fake_supertalks.com";
-// The admin dashboard app owns client bookings/questions tracking. Links below
-// point there instead of to tracking pages on this public site.
-const EDITOR_ORIGIN = env.BUN_PUBLIC_EDITOR_ORIGIN ?? "http://localhost:3001";
-const dashboardUrl = (path: string) => `${EDITOR_ORIGIN}${path}`;
-
-/** Shared toast id so loading → success/error replaces the same notification. */
-const PAY_TOAST_ID = "supertalks-pay";
 
 /** Render the whole copyright line as a single link to the SuperTalks site. */
 function linkifySuperTalks(text: string, url: string): React.ReactNode {
@@ -1145,28 +1146,35 @@ function BookingSection({
   const bookRef = useRef<((startAt: string) => Promise<void>) | null>(null);
 
   // Back from the payment gateway: confirm the booking once payment lands.
-  useGatewayReturn((_outcome, _paymentId, status) => {
-    const ok = status === "success";
-    setStatus({
-      ok,
-      message:
-        status === "success"
-          ? "Payment successful! Your session is confirmed."
-          : status === "failed"
-            ? "Payment failed. You can try again."
-            : status === "pending"
-              ? "Payment is being processed. We'll confirm your session shortly."
-              : "Payment could not be completed.",
-    });
-    if (ok) {
-      toast.success("Payment successful! Your session is confirmed.", { id: PAY_TOAST_ID });
-      setRefreshNonce((n) => n + 1);
-    } else if (status === "failed") {
-      toast.error("Payment failed. You can try again.", { id: PAY_TOAST_ID });
+  useGatewayReturn((outcome, _paymentId, status) => {
+    const isBooking = isBookingOutcome(outcome);
+    const persisted = consumeRedirectPath();
+    const matchesBooking =
+      isBooking || (persisted != null && persisted.startsWith("/bookings"));
+    const path = redirectPathFromOutcome(outcome) ?? (matchesBooking ? persisted : null);
+    if (status === "success") {
+      // Success for this page only when the settled payment is this flow's.
+      // Otherwise another section owns it — don't clobber their toast or URL.
+      if (matchesBooking) {
+        setStatus({ ok: true, message: "Payment successful! Your session is confirmed." });
+        showPaymentSuccess("Payment successful! Your session is confirmed.", path);
+        setRefreshNonce((n) => n + 1);
+      }
+      return;
+    }
+    const failedMessage =
+      status === "failed"
+        ? "Payment failed. You can try again."
+        : status === "pending"
+          ? "Payment is being processed. We'll confirm your session shortly."
+          : "Payment could not be completed.";
+    setStatus({ ok: false, message: failedMessage });
+    if (status === "failed") {
+      toast.error(failedMessage, { id: PAY_TOAST_ID });
     } else if (status === "pending") {
-      toast("Payment is being processed. We'll confirm your session shortly.", { id: PAY_TOAST_ID });
+      toast(failedMessage, { id: PAY_TOAST_ID });
     } else {
-      toast.error("Payment could not be completed.", { id: PAY_TOAST_ID });
+      toast.error(failedMessage, { id: PAY_TOAST_ID });
     }
   });
 
@@ -1215,22 +1223,24 @@ function BookingSection({
     setStatus(null);
     toast.loading("Checking availability and starting your booking…", { id: PAY_TOAST_ID });
     try {
-      const { payment } = await createBooking(
+      const { booking, payment } = await createBooking(
         client.astrologerId,
         startAt,
         crypto.randomUUID(),
       );
+      rememberRedirectPath(`/bookings?id=${booking.id}`);
       if (payment) {
         setStatus({ ok: true, message: "Redirecting to secure payment…" });
         toast.loading("Redirecting to secure payment…", { id: PAY_TOAST_ID });
         const outcome = await runCheckout(payment, window.location.href);
         if (outcome === "redirect") return;
+        const path = redirectPathFromOutcome(outcome) ?? `/bookings?id=${booking.id}`;
         setStatus({ ok: true, message: "Payment successful! Your session is confirmed." });
-        toast.success("Payment successful! Your session is confirmed.", { id: PAY_TOAST_ID });
+        showPaymentSuccess("Payment successful! Your session is confirmed.", path);
         setRefreshNonce((n) => n + 1);
       } else {
         setStatus({ ok: true, message: "Session booked and confirmed." });
-        toast.success("Session booked and confirmed.", { id: PAY_TOAST_ID });
+        showPaymentSuccess("Session booked and confirmed.", `/bookings?id=${booking.id}`);
       }
     } catch (err) {
       const message =
@@ -1342,18 +1352,22 @@ function BookingSection({
               <p className={status.ok ? "wx-book-ok" : "wx-book-danger"}>{status.message}</p>
             ) : null}
             {auth.user ? (
-              <p className="wx-book-note">
-                Signed in as {auth.user.email}.{" "}
-                <button type="button" className="wx-linkbtn" onClick={auth.signOut}>
-                  Sign out
-                </button>
-                <a className="wx-auth-btn wx-auth-btn-solid" href={dashboardUrl("/dashboard")}>
-                  Go to Dashboard
-                </a>
-                <a className="wx-linkbtn" href={dashboardUrl("/bookings")}>
-                  Track your bookings in your dashboard →
-                </a>
-              </p>
+              <div className="wx-account-note">
+                <p>
+                  Signed in as {auth.user.email}.{" "}
+                  <button type="button" className="wx-linkbtn" onClick={auth.signOut}>
+                    Sign out
+                  </button>
+                </p>
+                <div className="wx-account-actions">
+                  <a className="wx-auth-btn wx-auth-btn-solid" href={dashboardUrl("/dashboard")}>
+                    Go to Dashboard
+                  </a>
+                  <a className="wx-linkbtn" href={dashboardUrl("/bookings")}>
+                    Track your bookings in your dashboard →
+                  </a>
+                </div>
+              </div>
             ) : (
               <p className="wx-book-note">
                 Sign in (or create a free account) to book a slot.
@@ -1406,25 +1420,34 @@ function QuestionSection({
   >(null);
 
   // Back from the payment gateway: finish the order once the payment lands.
-  useGatewayReturn((_outcome, _paymentId, status) => {
-    const ok = status === "success";
-    const message =
-      status === "success"
-        ? "Payment successful! Your questions have been sent. Track replies from your dashboard."
-        : status === "failed"
-          ? "Payment failed. Please try again."
-          : status === "pending"
-            ? "Payment is being processed. Your questions will be sent shortly."
-            : "Payment could not be completed.";
-    setStatus({ ok, message });
-    if (ok) {
-      toast.success(message, { id: PAY_TOAST_ID });
-    } else if (status === "failed") {
-      toast.error(message, { id: PAY_TOAST_ID });
+  useGatewayReturn((outcome, _paymentId, status) => {
+    const isQuestion = isQuestionOutcome(outcome);
+    const persisted = consumeRedirectPath();
+    const matchesQuestion =
+      isQuestion || (persisted != null && persisted.startsWith("/questions"));
+    const path = redirectPathFromOutcome(outcome) ?? (matchesQuestion ? persisted : null);
+    if (status === "success") {
+      if (matchesQuestion) {
+        const message =
+          "Payment successful! Your questions have been sent. Track replies from your dashboard.";
+        setStatus({ ok: true, message });
+        showPaymentSuccess(message, path);
+      }
+      return;
+    }
+    const failedMessage =
+      status === "failed"
+        ? "Payment failed. Please try again."
+        : status === "pending"
+          ? "Payment is being processed. Your questions will be sent shortly."
+          : "Payment could not be completed.";
+    setStatus({ ok: false, message: failedMessage });
+    if (status === "failed") {
+      toast.error(failedMessage, { id: PAY_TOAST_ID });
     } else if (status === "pending") {
-      toast(message, { id: PAY_TOAST_ID });
+      toast(failedMessage, { id: PAY_TOAST_ID });
     } else {
-      toast.error(message, { id: PAY_TOAST_ID });
+      toast.error(failedMessage, { id: PAY_TOAST_ID });
     }
   });
 
@@ -1526,6 +1549,10 @@ function QuestionSection({
     toast.loading("Checking your order and starting payment…", { id: PAY_TOAST_ID });
     try {
       const result = await orderQuestions(client.astrologerId, items, details);
+      const firstQuestion = result.questions[0];
+      rememberRedirectPath(
+        firstQuestion ? `/questions?thread=${firstQuestion.id}` : "/questions",
+      );
       setStatus({ ok: true, message: "Redirecting to secure payment…" });
       toast.loading("Redirecting to secure payment…", { id: PAY_TOAST_ID });
       const outcome = await runCheckout(result.payment, window.location.href);
@@ -1536,7 +1563,10 @@ function QuestionSection({
       const successMsg =
         "Payment successful! Your questions have been sent. Track replies and continue chatting from your dashboard.";
       setStatus({ ok: true, message: successMsg });
-      toast.success(successMsg, { id: PAY_TOAST_ID });
+      const path =
+        redirectPathFromOutcome(outcome) ??
+        (firstQuestion ? `/questions?thread=${firstQuestion.id}` : "/questions");
+      showPaymentSuccess(successMsg, path);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Could not create your order. Please try again.";
@@ -1842,18 +1872,22 @@ function QuestionSection({
               <p className={status.ok ? "wx-book-ok" : "wx-book-danger"}>{status.message}</p>
             ) : null}
             {auth.user ? (
-              <p className="wx-book-note">
-                Signed in as {auth.user.email}.{" "}
-                <button type="button" className="wx-linkbtn" onClick={auth.signOut}>
-                  Sign out
-                </button>
-                <a className="wx-auth-btn wx-auth-btn-solid" href={dashboardUrl("/dashboard")}>
-                  Go to Dashboard
-                </a>
-                <a className="wx-linkbtn" href={dashboardUrl("/questions")}>
-                  Track your questions in your dashboard →
-                </a>
-              </p>
+              <div className="wx-account-note">
+                <p>
+                  Signed in as {auth.user.email}.{" "}
+                  <button type="button" className="wx-linkbtn" onClick={auth.signOut}>
+                    Sign out
+                  </button>
+                </p>
+                <div className="wx-account-actions">
+                  <a className="wx-auth-btn wx-auth-btn-solid" href={dashboardUrl("/dashboard")}>
+                    Go to Dashboard
+                  </a>
+                  <a className="wx-linkbtn" href={dashboardUrl("/questions")}>
+                    Track your questions in your dashboard →
+                  </a>
+                </div>
+              </div>
             ) : (
               <p className="wx-book-note">
                 Sign in (or create a free account) to send your question.
@@ -1924,12 +1958,10 @@ function FooterSection({
           </div>
         </div>
         <div className="wx-footer-bottom">
-          {edit ? (
-            <Editable as="p" className="wx-copyright" field="copyright" section={section} edit={edit} value={copyrightText} onSelectField={(f) => onSelectField?.(section.id, f)}
-                onEditValue={(f, v) => onEditValue?.(section.id, f, v)} />
-          ) : (
-            <p className="wx-copyright">{linkifySuperTalks(copyrightText, SUPERTALKS_URL)}</p>
-          )}
+          {/* Platform attribution. Deliberately not an `Editable` field: the
+              builder renders exactly what visitors see, so the astrologer can
+              neither rewrite the label nor repoint the link off SuperTalks. */}
+          <p className="wx-copyright">{linkifySuperTalks(copyrightText, SUPERTALKS_URL)}</p>
         </div>
       </footer>
     </SectionShell>
@@ -2161,10 +2193,23 @@ function fieldLabelOf(key: string): string {
           }}
         />
       )}
-      {edit || serviceOpen ? null : (
+      {edit || serviceOpen ? null : auth.user ? (
         <a className="wx-dash-float" href={dashboardUrl("/dashboard")}>
           My Dashboard
         </a>
+      ) : (
+        // Signed out: send them straight into the auth modal rather than
+        // bouncing them to a dashboard page that would just bounce back here.
+        <button
+          type="button"
+          className="wx-dash-float"
+          onClick={() => {
+            setAuthMode("signin");
+            setAuthOpen(true);
+          }}
+        >
+          Sign in
+        </button>
       )}
     </main>
   );

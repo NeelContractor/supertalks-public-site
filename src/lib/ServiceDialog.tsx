@@ -8,7 +8,14 @@ import {
   type QuestionOrderClientDetails,
 } from "./client";
 import type { UseAuth } from "./useAuth";
-import { runCheckout, useGatewayReturn } from "./pay";
+import { PAY_TOAST_ID, runCheckout, showPaymentSuccess, useGatewayReturn } from "./pay";
+import {
+  consumeRedirectPath,
+  isBookingOutcome,
+  isQuestionOutcome,
+  redirectPathFromOutcome,
+  rememberRedirectPath,
+} from "./editor";
 import { toast } from "sonner";
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import {
@@ -18,8 +25,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { PickedService, SiteClientInfo } from "./site-render";
-
-const PAY_TOAST_ID = "supertalks-pay";
 
 function dateKey(date: Date): string {
   const year = date.getFullYear();
@@ -91,21 +96,32 @@ export function ServiceDialog({
     | null
   >(null);
 
-  useGatewayReturn((_outcome, _paymentId, status) => {
-    const ok = status === "success";
+  useGatewayReturn((outcome, _paymentId, status) => {
+    // The settled outcome is the source of truth; the persisted target covers
+    // cases where the outcome isn't confirmed yet (poll timeout) but the
+    // gateway already told us the charge landed.
+    const persisted = consumeRedirectPath();
+    const isSlot =
+      isBookingOutcome(outcome) || (persisted != null && persisted.startsWith("/bookings"));
+    const isQuestion =
+      !isSlot &&
+      (isQuestionOutcome(outcome) || (persisted != null && persisted.startsWith("/questions")));
+    const path = redirectPathFromOutcome(outcome) ?? (isSlot || isQuestion ? persisted : null);
     const message =
       status === "success"
-        ? service?.kind === "slot"
+        ? isSlot
           ? "Payment successful! Your session is confirmed."
-          : "Payment successful! Your questions have been sent."
+          : isQuestion
+            ? "Payment successful! Your questions have been sent."
+            : "Payment successful!"
         : status === "failed"
           ? "Payment failed. You can try again."
           : status === "pending"
             ? "Payment is being processed. We'll confirm shortly."
             : "Payment could not be completed.";
-    setStatus({ ok, message });
-    if (ok) {
-      toast.success(message, { id: PAY_TOAST_ID });
+    setStatus({ ok: status === "success", message });
+    if (status === "success") {
+      showPaymentSuccess(message, path);
     } else if (status === "failed") {
       toast.error(message, { id: PAY_TOAST_ID });
     } else if (status === "pending") {
@@ -201,23 +217,25 @@ export function ServiceDialog({
     setStatus(null);
     toast.loading("Checking availability and starting your booking…", { id: PAY_TOAST_ID });
     try {
-      const { payment } = await createBooking(
+      const { booking, payment } = await createBooking(
         astrologerId,
         slot.startAt,
         crypto.randomUUID(),
         service?.serviceId,
         details,
       );
+      rememberRedirectPath(`/bookings?id=${booking.id}`);
       if (payment) {
         setStatus({ ok: true, message: "Redirecting to secure payment…" });
         toast.loading("Redirecting to secure payment…", { id: PAY_TOAST_ID });
         const outcome = await runCheckout(payment, window.location.href);
         if (outcome === "redirect") return;
+        const path = redirectPathFromOutcome(outcome) ?? `/bookings?id=${booking.id}`;
         setStatus({ ok: true, message: "Payment successful! Your session is confirmed." });
-        toast.success("Payment successful! Your session is confirmed.", { id: PAY_TOAST_ID });
+        showPaymentSuccess("Payment successful! Your session is confirmed.", path);
       } else {
         setStatus({ ok: true, message: "Session booked and confirmed." });
-        toast.success("Session booked and confirmed.", { id: PAY_TOAST_ID });
+        showPaymentSuccess("Session booked and confirmed.", `/bookings?id=${booking.id}`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Booking failed. Please try again.";
@@ -239,12 +257,19 @@ export function ServiceDialog({
         [{ questionText: service?.title ?? "Question", serviceId: service?.serviceId }],
         cleanDetails,
       );
+      const firstQuestion = result.questions[0];
+      rememberRedirectPath(
+        firstQuestion ? `/questions?thread=${firstQuestion.id}` : "/questions",
+      );
       setStatus({ ok: true, message: "Redirecting to secure payment…" });
       toast.loading("Redirecting to secure payment…", { id: PAY_TOAST_ID });
       const outcome = await runCheckout(result.payment, window.location.href);
       if (outcome === "redirect") return;
       setStatus({ ok: true, message: "Payment successful! Your questions have been sent." });
-      toast.success("Payment successful! Your questions have been sent.", { id: PAY_TOAST_ID });
+      const path =
+        redirectPathFromOutcome(outcome) ??
+        (firstQuestion ? `/questions?thread=${firstQuestion.id}` : "/questions");
+      showPaymentSuccess("Payment successful! Your questions have been sent.", path);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Could not create your order. Please try again.";
